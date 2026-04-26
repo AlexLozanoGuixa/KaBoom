@@ -3,6 +3,7 @@ import sys
 
 from PantallaMapas import pantalla_mapas
 from PantallaAudio import pantalla_audio
+from PantallaPrincipal import crear_superficie_menu_logica, convertir_mouse_a_logico, presentar_menu_logico
 from Config import config
 
 BLANCO = (255, 255, 255)
@@ -12,6 +13,8 @@ ROJO = (255, 0, 0)
 
 class ConfiguracionPartida:
     def run(self, screen, bg_anim):
+        display_screen = screen
+        screen = crear_superficie_menu_logica()
         clock = pygame.time.Clock()
         pygame.display.set_caption("Configuración de Partida")
 
@@ -108,7 +111,7 @@ class ConfiguracionPartida:
             config.current_minute = current_minute
             config.current_position_index = current_position_index
             config.current_ultimas_index = current_ultimas_index.copy()
-            pantalla_mapas(screen, bg_anim)
+            pantalla_mapas(display_screen, bg_anim)
 
         # Inicializar sistema de mandos
         pygame.joystick.init()
@@ -125,14 +128,14 @@ class ConfiguracionPartida:
 
         running = True
         while running:
-            mouse_pos = pygame.mouse.get_pos()
+            mouse_pos = convertir_mouse_a_logico(pygame.mouse.get_pos(), display_screen)
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     pygame.quit()
                     sys.exit()
 
-                # === CAMBIO 2: Actualizar la variable de estado con cada evento ===
+                # Registra el último tipo de entrada para mostrar las ayudas visuales correctas.
                 if event.type in [pygame.JOYAXISMOTION, pygame.JOYHATMOTION, pygame.JOYBUTTONDOWN]:
                     last_input_type = "mando"
                 elif event.type in [pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN]:
@@ -223,23 +226,23 @@ class ConfiguracionPartida:
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_ESCAPE:
                         config.__init__()
-                        confirmar_salida(screen, bg_anim, fondo_anterior=screen.copy())
+                        confirmar_salida(display_screen, bg_anim, fondo_anterior=display_screen.copy())
                     if event.key == pygame.K_RETURN:
                         ir_a_pantalla_mapas()
 
                     if event.key == pygame.K_LCTRL or event.key == pygame.K_RCTRL:
-                        pantalla_audio(screen, bg_anim, volver_callback=pantalla2_main)
+                        pantalla_audio(display_screen, bg_anim, volver_callback=pantalla2_main)
 
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     if atras_rect.collidepoint(mouse_pos):
                         config.__init__()
-                        confirmar_salida(screen, bg_anim, fondo_anterior=screen.copy())
+                        confirmar_salida(display_screen, bg_anim, fondo_anterior=display_screen.copy())
 
                     if siguiente_rect.collidepoint(mouse_pos):
                         ir_a_pantalla_mapas()
 
                     if audio_rect.collidepoint(mouse_pos):
-                        pantalla_audio(screen, bg_anim, volver_callback=pantalla2_main)
+                        pantalla_audio(display_screen, bg_anim, volver_callback=pantalla2_main)
 
                     for key, btn in botones.items():
                         if btn["rect"].collidepoint(mouse_pos):
@@ -300,10 +303,10 @@ class ConfiguracionPartida:
 
                     elif event.button == 1:  # Botón B → confirmar salida
                         config.__init__()
-                        confirmar_salida(screen, bg_anim, fondo_anterior=screen.copy())
+                        confirmar_salida(display_screen, bg_anim, fondo_anterior=display_screen.copy())
 
                     elif event.button in (7, 9):  # Botón OPTIONS/Start → ajustes
-                        pantalla_audio(screen, bg_anim, volver_callback=pantalla2_main)
+                        pantalla_audio(display_screen, bg_anim, volver_callback=pantalla2_main)
 
                 elif event.type == pygame.JOYDEVICEADDED:
                     nuevo_mando = pygame.joystick.Joystick(event.device_index)
@@ -313,7 +316,8 @@ class ConfiguracionPartida:
 
             # Dibujar
             bg_anim.update()
-            bg_anim.draw(screen)
+            bg_anim.draw(display_screen)
+            screen.fill((0, 0, 0, 0))
             screen.blit(fondo, fondo_rect)
 
             # Detectar si el ratón está sobre alguna tira: actualizar tira_activa_idx
@@ -395,7 +399,7 @@ class ConfiguracionPartida:
                 else:
                     screen.blit(img, rc)
 
-            # ayuda visual botones
+            # Ayudas visuales del control activo.
             if last_input_type == "mando":
                 imagen = imagen_boton_b
             else:
@@ -429,6 +433,7 @@ class ConfiguracionPartida:
             title_rect = title_surf.get_rect(center=(537, 105))
             screen.blit(title_surf, title_rect)
 
+            presentar_menu_logico(display_screen, screen)
             pygame.display.flip()
             clock.tick(60)
 

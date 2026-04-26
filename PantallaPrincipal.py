@@ -2,6 +2,9 @@ import pygame
 import sys
 import math
 
+MENU_LOGICAL_SIZE = (800, 600)
+
+
 # --- Clase para el fondo animado ---
 class BackgroundAnimation:
     def __init__(self, screen_width, screen_height):
@@ -63,6 +66,35 @@ class BackgroundAnimation:
         screen.blit(self.ground, (self.ground_x, self.screen_height - self.ground_height))
 
 
+def crear_pantalla_completa():
+    info = pygame.display.Info()
+    ancho = max(1, info.current_w)
+    alto = max(1, info.current_h)
+    return pygame.display.set_mode((ancho, alto), pygame.FULLSCREEN)
+
+
+def crear_superficie_menu_logica():
+    return pygame.Surface(MENU_LOGICAL_SIZE, pygame.SRCALPHA)
+
+
+def convertir_mouse_a_logico(mouse_pos, display_screen):
+    logical_w, logical_h = MENU_LOGICAL_SIZE
+    display_w, display_h = display_screen.get_size()
+    if (display_w, display_h) == MENU_LOGICAL_SIZE:
+        return mouse_pos
+    escala_x = display_w / logical_w
+    escala_y = display_h / logical_h
+    return int(mouse_pos[0] / escala_x), int(mouse_pos[1] / escala_y)
+
+
+def presentar_menu_logico(display_screen, logical_surface):
+    if logical_surface.get_size() == display_screen.get_size():
+        display_screen.blit(logical_surface, (0, 0))
+    else:
+        frame = pygame.transform.smoothscale(logical_surface, display_screen.get_size())
+        display_screen.blit(frame, (0, 0))
+
+
 def draw_bombeo_texto(screen, center, font, message):
     tiempo = pygame.time.get_ticks() / 300.0
     factor = 1 + 0.05 * math.sin(tiempo)
@@ -104,8 +136,9 @@ def animar_titulo_kaboom(screen, logo_img, tiempo_inicio, screen_width):
 
 def background_screen(screen):
     pygame.init()
-    screen_width, screen_height = 800, 600
-    screen = pygame.display.set_mode((screen_width, screen_height))
+    if screen is None:
+        screen = crear_pantalla_completa()
+    screen_width, screen_height = screen.get_size()
     pygame.display.set_caption("Pantalla de Inicio - Fondo Animado")
     clock = pygame.time.Clock()
 

@@ -1,7 +1,9 @@
 import pygame
 import sys
 import math
-from ConfiguraciónMandos import gestor_jugadores  # INSTANCIA DETECCION TECLADO Y MANDO
+from ConfiguraciónMandos import gestor_jugadores
+from PantallaPrincipal import crear_superficie_menu_logica, convertir_mouse_a_logico, presentar_menu_logico
+
 pygame.init()
 
 if not pygame.mixer.get_init():
@@ -36,6 +38,7 @@ recien_unidos = set()
 
 mensaje_error = ""
 mensaje_timer = 0
+
 
 def reiniciar_estado_personajes():
     global temporizador_listos, estado_mandos_desconectados, recien_unidos, mensaje_error, mensaje_timer
@@ -105,8 +108,119 @@ def draw_etiqueta_jugador(screen, texto, posicion):
     screen.blit(texto_render, texto_rect)
 
 
+def draw_base_cpu(screen, center, tamano=(160, 160)):
+    rect = pygame.Rect(0, 0, tamano[0], tamano[1])
+    rect.center = center
+    pygame.draw.rect(screen, (255, 255, 255), rect)
+    pygame.draw.rect(screen, (0, 0, 0), rect, width=2)
+
+
+def obtener_id_estado_jugador(jugador):
+    if jugador is None:
+        return None
+    if jugador["tipo"] == "teclado":
+        return "teclado"
+    return jugador.get("instance_id")
+
+
+def limpiar_listos_huerfanos(gestor, listos):
+    ids_validos = {
+        obtener_id_estado_jugador(jugador)
+        for jugador in gestor.todos()
+        if obtener_id_estado_jugador(jugador) is not None
+    }
+    for clave in list(listos.keys()):
+        if clave not in ids_validos:
+            del listos[clave]
+
+
+def obtener_ultima_cpu(gestor):
+    for jugador in reversed(gestor.todos()):
+        if jugador["tipo"] == "cpu":
+            return jugador
+    return None
+
+
+def obtener_cpu_editando(gestor, listos):
+    for jugador in reversed(gestor.todos()):
+        if jugador["tipo"] == "cpu" and not listos.get(obtener_id_estado_jugador(jugador), False):
+            return jugador
+    return None
+
+
+def obtener_rects_flechas(center, imagen, flecha_izq, flecha_der, bombeo=True):
+    tiempo = pygame.time.get_ticks() / 300.0
+    factor = 1 + 0.02 * math.sin(tiempo) if bombeo else 1.0
+    _, alto_original = imagen.get_size()
+    alto_bombeo = int(alto_original * factor)
+    y_flechas = center[1] + (alto_bombeo // 2) + 10
+    return (
+        flecha_izq.get_rect(midright=(center[0] - 52, y_flechas)),
+        flecha_der.get_rect(midleft=(center[0] + 52, y_flechas)),
+    )
+
+
+def procesar_cancelacion_j1(gestor, listos):
+    ultima_cpu = obtener_ultima_cpu(gestor)
+    if ultima_cpu is not None:
+        clave_cpu = obtener_id_estado_jugador(ultima_cpu)
+        if listos.get(clave_cpu, False):
+            del listos[clave_cpu]
+        else:
+            gestor.jugadores.remove(ultima_cpu)
+            gestor.reordenar_jugadores()
+            limpiar_listos_huerfanos(gestor, listos)
+        return True
+
+    jugador1 = gestor.get(0)
+    if jugador1 is None:
+        return False
+
+    clave_j1 = obtener_id_estado_jugador(jugador1)
+    if listos.get(clave_j1, False):
+        del listos[clave_j1]
+    else:
+        gestor.jugadores.remove(jugador1)
+        gestor.reordenar_jugadores()
+        limpiar_listos_huerfanos(gestor, listos)
+    return True
+
+
+# Gestión de las ranuras de CPU que configura el jugador 1.
+def procesar_input_j1_cpu(tipo_input, gestor, listos, nombres_personajes, sonidos):
+    cpu_editando = obtener_cpu_editando(gestor, listos)
+
+    if cpu_editando:
+        id_cpu = obtener_id_estado_jugador(cpu_editando)
+        if tipo_input == "derecha":
+            cpu_editando["indice"] = (cpu_editando.get("indice", 0) + 1) % len(nombres_personajes)
+            return True
+        elif tipo_input == "izquierda":
+            cpu_editando["indice"] = (cpu_editando.get("indice", 0) - 1) % len(nombres_personajes)
+            return True
+        elif tipo_input == "confirmar":
+            listos[id_cpu] = True
+            nombre = nombres_personajes[cpu_editando["indice"]]
+            if nombre in sonidos:
+                sonidos[nombre].play()
+            return True
+    else:
+        if len(gestor.todos()) < gestor.max_jugadores:
+            if tipo_input in ["derecha", "izquierda"]:
+                nuevo_index = gestor.unir_cpu()
+                if nuevo_index:
+                    jug_cpu = gestor.get(nuevo_index - 1)
+                    jug_cpu["indice"] = 0
+                    return True
+    return False
+
+
+# -----------------------------------------------------
+
 def pantalla_personajes(screen, bg_anim):
     global mensaje_error, mensaje_timer
+    display_screen = screen
+    screen = crear_superficie_menu_logica()
 
     pygame.joystick.init()
     mandos = [pygame.joystick.Joystick(i) for i in range(pygame.joystick.get_count())]
@@ -116,21 +230,20 @@ def pantalla_personajes(screen, bg_anim):
     clock = pygame.time.Clock()
     pygame.display.set_caption("Pantalla Personajes")
 
-    # BOTON ATRAS
+    # Botón de vuelta al menú de mapas.
     atras = pygame.transform.scale(pygame.image.load("Media/Menu/Botones/siguiente.png"), (40, 40))
     atras_rotate = pygame.transform.rotate(atras, 180)
     atras_rect = atras_rotate.get_rect(bottomright=(70, screen.get_height() - 25))
 
-    # BOTON SIGUIENTE
+    # Botón para iniciar la partida cuando todos estén listos.
     siguiente = pygame.transform.scale(pygame.image.load("Media/Menu/Botones/siguiente.png").convert_alpha(), (40, 40))
     siguiente_rect = siguiente.get_rect(bottomright=(screen.get_width() - 25, screen.get_height() - 25))
 
-    # BOTON SETTINGS
+    # Botón de ajustes.
     audio = pygame.transform.scale(pygame.image.load("Media/Menu/Botones/settings.png"), (50, 40))
     audio_rect = audio.get_rect(topleft=(25, 25))
 
-    # ACLARACIÓN VISUAL
-    # Cargar imágenes (esto al inicio del archivo o en __init__)
+    # Iconos de ayuda visual para teclado y mando.
     imagen_boton_b = pygame.image.load("Media/Menu/Botones/boton_B.png").convert_alpha()
     imagen_tecla_escape = pygame.image.load("Media/Menu/Botones/escape.png").convert_alpha()
     imagen_boton_options = pygame.image.load("Media/Menu/Botones/options.png").convert_alpha()
@@ -138,7 +251,7 @@ def pantalla_personajes(screen, bg_anim):
     imagen_tecla_control = pygame.image.load("Media/Menu/Botones/tecla_control.png").convert_alpha()
     imagen_tecla_enter = pygame.image.load("Media/Menu/Botones/enter.png").convert_alpha()
 
-    # Redimensionar si es necesario
+    # Escalado base de iconos de ayuda.
     imagen_boton_b = pygame.transform.scale(imagen_boton_b, (50, 50))
     imagen_boton_a = pygame.transform.scale(imagen_boton_a, (50, 50))
     imagen_boton_options = pygame.transform.scale(imagen_boton_options, (40, 40))
@@ -194,118 +307,137 @@ def pantalla_personajes(screen, bg_anim):
 
     last_input_type = "teclado"
 
+    def intentar_iniciar_partida():
+        global mensaje_error, mensaje_timer
+        listos_confirmados = [valor for valor in temporizador_listos.values() if valor]
+        total_conectados = len(gestor_jugadores.jugadores)
+        if len(listos_confirmados) >= 2:
+            if len(listos_confirmados) == total_conectados:
+                from KaBoom import iniciar_partida
+                iniciar_partida(display_screen)
+                return True
+            mensaje_error = "Todos tus rivales no están listos"
+        else:
+            mensaje_error = "¡Deben estar listos al menos 2 jugadores!"
+        mensaje_timer = pygame.time.get_ticks()
+        return False
+
     running = True
     while running:
-        mouse_pos = pygame.mouse.get_pos()
+        mouse_pos = convertir_mouse_a_logico(pygame.mouse.get_pos(), display_screen)
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
 
-            # --------- DETECCIÓN DE TIPO DE INPUT ------------
+            # Registra el último tipo de entrada para mostrar las ayudas visuales correctas.
             if event.type in [pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN, pygame.MOUSEMOTION]:
                 last_input_type = "teclado"
             elif event.type in [pygame.JOYBUTTONDOWN, pygame.JOYAXISMOTION, pygame.JOYHATMOTION]:
                 last_input_type = "mando"
 
-            if event.type == pygame.MOUSEBUTTONDOWN:
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                jugador1 = gestor_jugadores.get(0)
+                id_j1 = obtener_id_estado_jugador(jugador1)
+                j1_listo = bool(jugador1 and temporizador_listos.get(id_j1, False))
+
+                if j1_listo:
+                    cpu_editando = obtener_cpu_editando(gestor_jugadores, temporizador_listos)
+                    if cpu_editando is not None:
+                        idx_cpu = gestor_jugadores.todos().index(cpu_editando)
+                        pos_cpu = personajes_centros[idx_cpu]
+                        personaje_cpu = personajes_disponibles[cpu_editando["indice"]]
+                        flecha_izq_rect, flecha_der_rect = obtener_rects_flechas(
+                            pos_cpu, personaje_cpu, flecha_izq, flecha_der, bombeo=False
+                        )
+                        if flecha_izq_rect.collidepoint(mouse_pos):
+                            procesar_input_j1_cpu("izquierda", gestor_jugadores, temporizador_listos,
+                                                  nombres_personajes, SONIDOS_PERSONAJE)
+                            continue
+                        if flecha_der_rect.collidepoint(mouse_pos):
+                            procesar_input_j1_cpu("derecha", gestor_jugadores, temporizador_listos,
+                                                  nombres_personajes, SONIDOS_PERSONAJE)
+                            continue
+                    elif len(gestor_jugadores.todos()) < gestor_jugadores.max_jugadores:
+                        idx_vacio = len(gestor_jugadores.todos())
+                        pos_vacio = personajes_centros[idx_vacio]
+                        flecha_izq_rect, flecha_der_rect = obtener_rects_flechas(
+                            pos_vacio, img_default, flecha_izq, flecha_der, bombeo=True
+                        )
+                        if flecha_izq_rect.collidepoint(mouse_pos):
+                            procesar_input_j1_cpu("izquierda", gestor_jugadores, temporizador_listos,
+                                                  nombres_personajes, SONIDOS_PERSONAJE)
+                            continue
+                        if flecha_der_rect.collidepoint(mouse_pos):
+                            procesar_input_j1_cpu("derecha", gestor_jugadores, temporizador_listos,
+                                                  nombres_personajes, SONIDOS_PERSONAJE)
+                            continue
+
                 if atras_rect.collidepoint(mouse_pos):
                     from PantallaMapas import pantalla_mapas
                     gestor_jugadores.reset()
                     temporizador_listos.clear()
                     estado_mandos_desconectados.clear()
                     recien_unidos.clear()
-                    pantalla_mapas(screen, bg_anim)
+                    pantalla_mapas(display_screen, bg_anim)
                     return
 
                 if siguiente_rect.collidepoint(mouse_pos):
-                    listos = [j for j in temporizador_listos.values() if j]
-                    total_conectados = len(gestor_jugadores.jugadores)
-                    total_listos = len(listos)
+                    if intentar_iniciar_partida():
+                        return
 
                 if audio_rect.collidepoint(mouse_pos):
                     from PantallaAudio import pantalla_audio
-                    pantalla_audio(screen, bg_anim, volver_callback=pantalla_personajes)
-
-                    if total_listos >= 2:
-                        if total_listos == total_conectados:
-                            from Bomberman import iniciar_partida
-                            iniciar_partida(screen)
-                            return
-                        else:
-                            mensaje_error = "Todos tus rivales no están listos"
-                            mensaje_timer = pygame.time.get_ticks()
-                    else:
-                        mensaje_error = "¡Deben estar listos al menos 2 jugadores!"
-                        mensaje_timer = pygame.time.get_ticks()
+                    pantalla_audio(display_screen, bg_anim, volver_callback=pantalla_personajes)
 
             if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE:
-                    jugador_teclado = gestor_jugadores.get_teclado()
-
                 if event.key == pygame.K_LCTRL or event.key == pygame.K_RCTRL:
                     from PantallaAudio import pantalla_audio
-                    pantalla_audio(screen, bg_anim, volver_callback=pantalla_personajes)
+                    pantalla_audio(display_screen, bg_anim, volver_callback=pantalla_personajes)
+                    continue
 
-                    # Si no hay un jugador con teclado asignado, vuelve a mapas.
-                    if jugador_teclado is None:
-                        from PantallaMapas import pantalla_mapas
-                        gestor_jugadores.reset()
-                        temporizador_listos.clear()
-                        estado_mandos_desconectados.clear()
-                        recien_unidos.clear()
-                        pantalla_mapas(screen, bg_anim)
-                        return
+                jugador_teclado = gestor_jugadores.get_teclado()
 
-                    # Si el jugador con teclado existe, aplicamos la nueva lógica.
-                    id_jugador = "teclado"
-                    # Regla 1: Si está "LISTO", solo se le quita el estado.
-                    if temporizador_listos.get(id_jugador, False):
-                        temporizador_listos[id_jugador] = False
-                    # Regla 2: Si NO está "LISTO"...
-                    else:
-                        if gestor_jugadores.get(0) == jugador_teclado:
+                if jugador_teclado is None:
+                    if event.key == pygame.K_ESCAPE:
+                        if not gestor_jugadores.todos():
                             from PantallaMapas import pantalla_mapas
                             gestor_jugadores.reset()
                             temporizador_listos.clear()
                             estado_mandos_desconectados.clear()
                             recien_unidos.clear()
-                            pantalla_mapas(screen, bg_anim)
+                            pantalla_mapas(display_screen, bg_anim)
                             return
-                        else:
-                            if id_jugador in temporizador_listos:
-                                del temporizador_listos[id_jugador]
-                            gestor_jugadores.eliminar_teclado()
-
-                # Si el teclado no participa, se une con cualquier tecla y se detiene.
-                if gestor_jugadores.get_teclado() is None:
-                    # La primera pulsación de cualquier tecla (excepto ESC) solo une al jugador.
-                    gestor_jugadores.unir_teclado()
-                    # 'continue' salta al siguiente evento, ignorando el código de abajo en esta pulsación.
+                        continue
+                    union_ok = gestor_jugadores.unir_teclado()
+                    if union_ok:
+                        limpiar_listos_huerfanos(gestor_jugadores, temporizador_listos)
                     continue
 
-                # Si el teclado YA participa, se procesan las acciones.
-                jugador = gestor_jugadores.get_teclado()
+                if event.key == pygame.K_ESCAPE:
+                    if gestor_jugadores.get(0) == jugador_teclado:
+                        if procesar_cancelacion_j1(gestor_jugadores, temporizador_listos):
+                            continue
+                    id_jugador = obtener_id_estado_jugador(jugador_teclado)
+                    if temporizador_listos.get(id_jugador, False):
+                        del temporizador_listos[id_jugador]
+                    else:
+                        gestor_jugadores.eliminar_teclado()
+                        limpiar_listos_huerfanos(gestor_jugadores, temporizador_listos)
+                    continue
+
+                jugador = jugador_teclado
                 if jugador:
                     if event.key == pygame.K_RETURN:
-                        # Si ya está listo (2da pulsación), y es J1, intenta empezar (3ra pulsación).
                         if temporizador_listos.get("teclado", False):
                             jugador1 = gestor_jugadores.get(0)
                             if jugador1 and jugador1["tipo"] == "teclado":
-                                listos = [j for j in temporizador_listos.values() if j]
-                                total_conectados = len(gestor_jugadores.jugadores)
-                                if len(listos) >= 2:
-                                    if len(listos) == total_conectados:
-                                        from Bomberman import iniciar_partida
-                                        iniciar_partida(screen)
-                                        return
-                                    else:
-                                        mensaje_error = "Todos tus rivales no están listos"
-                                else:
-                                    mensaje_error = "¡Deben estar listos al menos 2 jugadores!"
-                                mensaje_timer = pygame.time.get_ticks()
-                        # Si no está listo (1ra pulsación después de unirse), se pone listo.
+                                if procesar_input_j1_cpu("confirmar", gestor_jugadores, temporizador_listos,
+                                                         nombres_personajes, SONIDOS_PERSONAJE):
+                                    continue
+                                if intentar_iniciar_partida():
+                                    return
                         else:
                             temporizador_listos["teclado"] = True
                             personaje_idx = jugador["indice"]
@@ -319,104 +451,81 @@ def pantalla_personajes(screen, bg_anim):
                         elif event.key == pygame.K_RIGHT:
                             jugador["indice"] = (jugador.get("indice", 0) + 1) % len(personajes_disponibles)
 
+                    elif temporizador_listos.get("teclado") and gestor_jugadores.get(0) == jugador:
+                        if event.key == pygame.K_LEFT:
+                            procesar_input_j1_cpu("izquierda", gestor_jugadores, temporizador_listos,
+                                                  nombres_personajes, SONIDOS_PERSONAJE)
+                        elif event.key == pygame.K_RIGHT:
+                            procesar_input_j1_cpu("derecha", gestor_jugadores, temporizador_listos, nombres_personajes,
+                                                  SONIDOS_PERSONAJE)
+
             if event.type == pygame.JOYBUTTONDOWN:
                 instance_id = event.instance_id
                 jugador = gestor_jugadores.get_jugador_por_joy(instance_id)
 
-                # Si el mando no participa, se une con cualquier botón y se detiene.
                 if jugador is None:
-                    gestor_jugadores.unir_mando(event.joy)
+                    union_ok = gestor_jugadores.unir_mando(event.joy)
+                    if union_ok:
+                        limpiar_listos_huerfanos(gestor_jugadores, temporizador_listos)
                     continue
 
-                # Si el mando YA participa, se procesan las acciones.
+                id_jugador = obtener_id_estado_jugador(jugador)
                 if event.button == 0:  # Botón A
-                    if temporizador_listos.get(instance_id, False):
-                        jugador1 = gestor_jugadores.get(0)
-                        if jugador1 and jugador1["tipo"] == "mando" and jugador1.get("instance_id") == instance_id:
-                            listos = [j for j in temporizador_listos.values() if j]
-                            total_conectados = len(gestor_jugadores.jugadores)
-                            if len(listos) >= 2:
-                                if len(listos) == total_conectados:
-                                    from Bomberman import iniciar_partida
-                                    iniciar_partida(screen)
-                                    return
-                                else:
-                                    mensaje_error = "Todos tus rivales no están listos"
-                            else:
-                                mensaje_error = "¡Deben estar listos al menos 2 jugadores!"
-                            mensaje_timer = pygame.time.get_ticks()
+                    if temporizador_listos.get(id_jugador, False):
+                        if jugador == gestor_jugadores.get(0):
+                            if procesar_input_j1_cpu("confirmar", gestor_jugadores, temporizador_listos,
+                                                     nombres_personajes, SONIDOS_PERSONAJE):
+                                continue
+                            if intentar_iniciar_partida():
+                                return
                     else:
-                        temporizador_listos[instance_id] = True
-                        personaje_idx = jugador["indice"]
-                        nombre = nombres_personajes[personaje_idx]
-                        if nombre in SONIDOS_PERSONAJE:
-                            SONIDOS_PERSONAJE[nombre].play()
-
-                elif event.button in (7, 9):  # OPTIONS
-                    from PantallaAudio import pantalla_audio
-                    pantalla_audio(screen, bg_anim, volver_callback=pantalla_personajes)
-
-                elif event.button == 1:  # B (Atrás)
-                    # La lógica se aplica al jugador que pulsó el botón.
-                    # Regla 1: Si está "LISTO", solo se le quita el estado.
-                    if temporizador_listos.get(instance_id, False):
-                        temporizador_listos[instance_id] = False
-                    # Regla 2: Si NO está "LISTO"...
-                    else:
-                        if gestor_jugadores.get(0) == jugador:
-                            from PantallaMapas import pantalla_mapas
-                            gestor_jugadores.reset()
-                            temporizador_listos.clear()
-                            estado_mandos_desconectados.clear()
-                            recien_unidos.clear()
-                            pantalla_mapas(screen, bg_anim)
-                            return
-                        else:
-                            if instance_id in temporizador_listos:
-                                del temporizador_listos[instance_id]
-                            gestor_jugadores.eliminar_jugador_por_joy(instance_id)
-
-                elif event.button == 0:  # A (Botón de acción principal)
-                    # Si el jugador ya está listo, y es el Jugador 1, intenta iniciar la partida
-                    if temporizador_listos.get(instance_id, False):
-                        jugador1 = gestor_jugadores.get(0)
-                        if jugador1 and jugador1["tipo"] == "mando" and jugador1.get("id") == instance_id:
-                            listos = [j for j in temporizador_listos.values() if j]
-                            total_conectados = len(gestor_jugadores.jugadores)
-                            if len(listos) >= 2:
-                                if len(listos) == total_conectados:
-                                    from Bomberman import iniciar_partida
-                                    iniciar_partida(screen)
-                                    return
-                                else:
-                                    mensaje_error = "Todos tus rivales no están listos"
-                            else:
-                                mensaje_error = "¡Deben estar listos al menos 2 jugadores!"
-                            mensaje_timer = pygame.time.get_ticks()
-                    # Si el jugador no está listo, lo marca como "LISTO"
-                    else:
-                        temporizador_listos[instance_id] = True
+                        temporizador_listos[id_jugador] = True
                         if jugador:
                             personaje_idx = jugador["indice"]
                             nombre = nombres_personajes[personaje_idx]
                             if nombre in SONIDOS_PERSONAJE:
                                 SONIDOS_PERSONAJE[nombre].play()
+
+                elif event.button in (7, 9):  # OPTIONS
+                    from PantallaAudio import pantalla_audio
+                    pantalla_audio(display_screen, bg_anim, volver_callback=pantalla_personajes)
+
+                elif event.button == 1:  # B (Atrás)
+                    if jugador == gestor_jugadores.get(0):
+                        if procesar_cancelacion_j1(gestor_jugadores, temporizador_listos):
+                            continue
+                    elif temporizador_listos.get(id_jugador, False):
+                        del temporizador_listos[id_jugador]
+                    else:
+                        gestor_jugadores.eliminar_jugador_por_joy(instance_id)
+                        limpiar_listos_huerfanos(gestor_jugadores, temporizador_listos)
+
             if event.type == pygame.JOYHATMOTION:
                 instance_id = event.instance_id
                 jugador = gestor_jugadores.get_jugador_por_joy(instance_id)
-                if jugador and not temporizador_listos.get(instance_id):
+                id_jugador = obtener_id_estado_jugador(jugador)
+                if jugador and not temporizador_listos.get(id_jugador, False):
                     x, _ = event.value
                     if x == -1:
                         jugador["indice"] = (jugador.get("indice", 0) - 1) % len(personajes_disponibles)
                     elif x == 1:
                         jugador["indice"] = (jugador.get("indice", 0) + 1) % len(personajes_disponibles)
+                elif jugador and temporizador_listos.get(id_jugador, False) and jugador == gestor_jugadores.get(0):
+                    x, _ = event.value
+                    if x == -1:
+                        procesar_input_j1_cpu("izquierda", gestor_jugadores, temporizador_listos, nombres_personajes,
+                                              SONIDOS_PERSONAJE)
+                    elif x == 1:
+                        procesar_input_j1_cpu("derecha", gestor_jugadores, temporizador_listos, nombres_personajes,
+                                              SONIDOS_PERSONAJE)
 
             if event.type == pygame.JOYAXISMOTION:
                 if event.axis == 0:  # Eje horizontal del joystick izquierdo
                     instance_id = event.instance_id
                     jugador = gestor_jugadores.get_jugador_por_joy(instance_id)
+                    id_jugador = obtener_id_estado_jugador(jugador)
 
-                    if jugador and not temporizador_listos.get(instance_id):
+                    if jugador and not temporizador_listos.get(id_jugador, False):
                         # Solo ejecutar si el jugador no está marcado como listo
                         if abs(event.value) > THRESHOLD and joystick_ready.get(instance_id, True):
                             if event.value > 0:
@@ -427,24 +536,38 @@ def pantalla_personajes(screen, bg_anim):
                             joystick_ready[instance_id] = False
                         elif abs(event.value) < DEADZONE:
                             joystick_ready[instance_id] = True  # Rearme
+                    elif jugador and temporizador_listos.get(id_jugador, False) and jugador == gestor_jugadores.get(0):
+                        if abs(event.value) > THRESHOLD and joystick_ready.get(instance_id, True):
+                            if event.value > 0:
+                                procesar_input_j1_cpu("derecha", gestor_jugadores, temporizador_listos,
+                                                      nombres_personajes, SONIDOS_PERSONAJE)
+                            else:
+                                procesar_input_j1_cpu("izquierda", gestor_jugadores, temporizador_listos,
+                                                      nombres_personajes, SONIDOS_PERSONAJE)
+                            joystick_ready[instance_id] = False
+                        elif abs(event.value) < DEADZONE:
+                            joystick_ready[instance_id] = True
 
             if event.type == pygame.JOYDEVICEREMOVED:
                 instance_id = event.instance_id
                 jugador = gestor_jugadores.get_jugador_por_joy(instance_id)
                 if jugador:
-                    if instance_id in temporizador_listos:
-                        del temporizador_listos[instance_id]
+                    id_jugador = obtener_id_estado_jugador(jugador)
+                    if id_jugador in temporizador_listos:
+                        del temporizador_listos[id_jugador]
 
                     if instance_id in joystick_ready:
                         del joystick_ready[instance_id]
                     gestor_jugadores.eliminar_jugador_por_joy(instance_id)
+                    limpiar_listos_huerfanos(gestor_jugadores, temporizador_listos)
 
             if event.type == pygame.JOYDEVICEADDED:
                 nuevo_mando = pygame.joystick.Joystick(event.device_index)
                 nuevo_mando.init()
 
         bg_anim.update()
-        bg_anim.draw(screen)
+        bg_anim.draw(display_screen)
+        screen.fill((0, 0, 0, 0))
         screen.blit(fondo, fondo_rect)
 
         for i in range(4):
@@ -452,19 +575,62 @@ def pantalla_personajes(screen, bg_anim):
             jugador = gestor_jugadores.get(i)
             if jugador and "indice" in jugador:
                 tipo_jugador = jugador["tipo"]
-                base_rect = (img_teclado if tipo_jugador == "teclado" else img_mando).get_rect(center=pos)
-                screen.blit(img_teclado if tipo_jugador == "teclado" else img_mando, base_rect)
-                draw_etiqueta_jugador(screen, f"J{i + 1}", pos)
+                img_base = None
+                if tipo_jugador == "teclado":
+                    img_base = img_teclado
+                elif tipo_jugador == "mando":
+                    img_base = img_mando
+                elif tipo_jugador == "cpu":
+                    draw_base_cpu(screen, pos)
+                if img_base is not None:
+                    base_rect = img_base.get_rect(center=pos)
+                    screen.blit(img_base, base_rect)
+
+                etiqueta = f"J{i + 1}"
+                if tipo_jugador == "cpu":
+                    etiqueta = "CPU"
+                draw_etiqueta_jugador(screen, etiqueta, pos)
+
                 personaje_img = personajes_disponibles[jugador["indice"]]
                 nombre_personaje = nombres_personajes[jugador["indice"]]
-                id_jugador = "teclado" if tipo_jugador == "teclado" else jugador.get("instance_id")
+
+                id_jugador = obtener_id_estado_jugador(jugador)
                 listo = temporizador_listos.get(id_jugador, False)
+                is_cpu_editing = (tipo_jugador == "cpu" and not listo)
+
                 rect_img = draw_personaje_con_bombeo(screen, personaje_img, nombre_personaje, pos, flecha_izq,
-                                                     flecha_der, not listo, bombeo=False)
-                draw_mensaje_inicio(screen, rect_img, tipo_jugador, listo)
+                                                     flecha_der, (not listo or is_cpu_editing), bombeo=False)
+
+                if tipo_jugador == "cpu":
+                    fuente = pygame.font.Font(None, size=22)
+                    if listo:
+                        pygame.draw.rect(screen, (255, 255, 0), (rect_img.centerx - 60, rect_img.bottom + 35, 120, 30))
+                        texto_cpu = "LISTO"
+                    else:
+                        texto_cpu = "J1: Confirma skin"
+                    texto_render = fuente.render(texto_cpu, True, (0, 0, 0))
+                    texto_rect = texto_render.get_rect(center=(rect_img.centerx, rect_img.bottom + 50))
+                    screen.blit(texto_render, texto_rect)
+                else:
+                    draw_mensaje_inicio(screen, rect_img, tipo_jugador, listo)
             else:
-                draw_personaje_con_bombeo(screen, img_default, "NINGUNO", pos, flecha_izq, flecha_der, False,
-                                          bombeo=True)
+                j1 = gestor_jugadores.get(0)
+                j1_listo = False
+                if j1:
+                    id_j1 = obtener_id_estado_jugador(j1)
+                    j1_listo = temporizador_listos.get(id_j1, False)
+
+                es_primer_vacio = (i == len(gestor_jugadores.todos()))
+                if j1_listo and es_primer_vacio:
+                    rect_img = draw_personaje_con_bombeo(screen, img_default, "NINGUNO", pos, flecha_izq, flecha_der,
+                                                         True, bombeo=True)
+                    fuente_cpu = pygame.font.Font(None, size=20)
+                    texto_cpu = fuente_cpu.render("J1 puedes añadir a la CPU", True, (0, 0, 0))
+                    texto_cpu_rect = texto_cpu.get_rect(center=(rect_img.centerx, rect_img.bottom + 50))
+                    screen.blit(texto_cpu, texto_cpu_rect)
+                else:
+                    draw_personaje_con_bombeo(screen, img_default, "NINGUNO", pos, flecha_izq, flecha_der, False,
+                                              bombeo=True)
 
         draw_texto_inferior_bombeo(screen, "Pulsa para unirte", (screen.get_width() // 2, screen.get_height() - 30))
 
@@ -476,7 +642,7 @@ def pantalla_personajes(screen, bg_anim):
             else:
                 screen.blit(img, rect)
 
-        # logica ayuda visual botones
+        # Ayudas visuales del control activo.
         if last_input_type == "mando":
             imagen = imagen_boton_b
         else:
@@ -509,7 +675,7 @@ def pantalla_personajes(screen, bg_anim):
         title_rect = title_surf.get_rect(center=(537, 105))
         screen.blit(title_surf, title_rect)
 
-        # Mostrar mensaje "Jugador 1 puedes iniciar partida"
+        # Aviso de inicio cuando todos los jugadores conectados están listos.
         listos = [j for j in temporizador_listos.values() if j]
         total_conectados = len(gestor_jugadores.jugadores)
         mostrar_mensaje_j1 = len(listos) >= 2 and len(listos) == total_conectados
@@ -522,18 +688,16 @@ def pantalla_personajes(screen, bg_anim):
 
         if mostrar_mensaje_j1:
             font = pygame.font.Font(None, 28)
-            aviso_surf = font.render("Jugador 1 puedes iniciar partida", True, (0, 100, 0))  # Texto verde oscuro
+            aviso_surf = font.render("Jugador 1 puedes iniciar partida", True, (0, 100, 0))
             aviso_rect = aviso_surf.get_rect(center=(screen.get_width() // 2, screen.get_height() - 130))
 
-            # Crear superficie de resaltado semitransparente debajo del texto
             resaltado = pygame.Surface((aviso_rect.width, aviso_rect.height // 2), pygame.SRCALPHA)
-            resaltado.fill((180, 255, 180, 120))  # Verde fosforito con alfa (transparente)
+            resaltado.fill((180, 255, 180, 120))
 
-            # Dibujar resaltado ANTES del texto
             screen.blit(resaltado, (aviso_rect.left, aviso_rect.top + aviso_rect.height // 2 - 4))
 
-            # Dibujar texto encima
             screen.blit(aviso_surf, aviso_rect)
 
+        presentar_menu_logico(display_screen, screen)
         pygame.display.flip()
         clock.tick(60)

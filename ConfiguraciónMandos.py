@@ -1,27 +1,59 @@
-# CLASE PARA GESTIONAR JUGADORES Y MANDOS
+# Gestiona jugadores humanos, mandos conectados y ranuras controladas por CPU.
 
 import pygame
 
+
 class GestorJugadores:
     def __init__(self):
-        self.jugadores = []  # Lista de dicts: tipo ("teclado"/"mando"), id, indice personaje
+        self.jugadores = []  # Cada entrada guarda tipo de control, identificador e índice de skin.
         self.max_jugadores = 4
 
     def reset(self):
         self.jugadores.clear()
 
-    def unir_teclado(self):
-        if not any(j["tipo"] == "teclado" for j in self.jugadores) and len(self.jugadores) < self.max_jugadores:
-            nuevo_id = f"J{len(self.jugadores) + 1}"  # Asignar identificador dinámico
-
+    # Gestión de ranuras controladas por CPU.
+    def unir_cpu(self):
+        """Añade un jugador CPU si hay hueco."""
+        if len(self.jugadores) < self.max_jugadores:
+            nuevo_id = f"J{len(self.jugadores) + 1}"
             self.jugadores.append({
-                "tipo": "teclado",
+                "tipo": "cpu",
                 "id": None,
-                "instance_id": "teclado",
+                "instance_id": f"cpu_{nuevo_id}",
                 "indice": 0,
                 "id_jugador": nuevo_id
             })
             return len(self.jugadores)
+        return None
+
+    def reemplazar_cpu_por_humano(self, tipo_humano, instance_id_humano, device_id=None):
+        """Busca el primer hueco ocupado por una CPU y lo reemplaza por un humano."""
+        for i, j in enumerate(self.jugadores):
+            if j["tipo"] == "cpu":
+                j["tipo"] = tipo_humano
+                j["id"] = device_id
+                j["instance_id"] = instance_id_humano
+                j["indice"] = 0
+                return True
+        return False
+
+    def unir_teclado(self):
+        if not any(j["tipo"] == "teclado" for j in self.jugadores):
+            # Los jugadores humanos tienen prioridad sobre las ranuras CPU.
+            if self.reemplazar_cpu_por_humano("teclado", "teclado", None):
+                return len(self.jugadores)
+
+            # Si no hay CPU reemplazable, se crea una ranura humana cuando hay espacio.
+            if len(self.jugadores) < self.max_jugadores:
+                nuevo_id = f"J{len(self.jugadores) + 1}"
+                self.jugadores.append({
+                    "tipo": "teclado",
+                    "id": None,
+                    "instance_id": "teclado",
+                    "indice": 0,
+                    "id_jugador": nuevo_id
+                })
+                return len(self.jugadores)
         return None
 
     def unir_mando(self, device_index):
@@ -30,18 +62,22 @@ class GestorJugadores:
             joy.init()
 
         instance_id = joy.get_instance_id()
-        if not any(j.get("instance_id") == instance_id for j in self.jugadores) and len(
-                self.jugadores) < self.max_jugadores:
-            nuevo_id = f"J{len(self.jugadores) + 1}"
+        if not any(j.get("instance_id") == instance_id for j in self.jugadores):
+            # Los mandos nuevos también sustituyen a una CPU si no hay huecos libres.
+            if self.reemplazar_cpu_por_humano("mando", instance_id, device_index):
+                return len(self.jugadores)
 
-            self.jugadores.append({
-                "tipo": "mando",
-                "id": device_index,  # lo conservamos por si hace falta
-                "instance_id": instance_id,  # ¡el que nunca cambia!
-                "indice": 0,
-                "id_jugador": nuevo_id
-            })
-            return len(self.jugadores)
+            # Si no hay CPU reemplazable, se crea una ranura humana cuando hay espacio.
+            if len(self.jugadores) < self.max_jugadores:
+                nuevo_id = f"J{len(self.jugadores) + 1}"
+                self.jugadores.append({
+                    "tipo": "mando",
+                    "id": device_index,
+                    "instance_id": instance_id,
+                    "indice": 0,
+                    "id_jugador": nuevo_id
+                })
+                return len(self.jugadores)
         return None
 
     def actualizar_indice(self, jugador_index, nuevo_indice):
@@ -70,18 +106,14 @@ class GestorJugadores:
 
     def eliminar_jugador_por_joy(self, instance_id):
         self.jugadores = [j for j in self.jugadores if j.get("instance_id") != instance_id]
-        self.reordenar_jugadores()  # Esencial para reasignar "J1", "J2", etc.
-
+        self.reordenar_jugadores()
 
     def eliminar_teclado(self):
         self.jugadores = [j for j in self.jugadores if j["tipo"] != "teclado"]
         self.reordenar_jugadores()
 
     def reordenar_jugadores(self):
-        # Simplemente reordena la lista sin huecos y mantiene hasta 4 jugadores
-        self.jugadores = self.jugadores[:self.max_jugadores]
-        for i, jugador in enumerate(self.jugadores):
-            jugador["id_jugador"] = f"J{i + 1}"
-
-
+        # Mantiene la numeración visible J1, J2, etc. después de altas y bajas.
+        for i, j in enumerate(self.jugadores):
+            j["id_jugador"] = f"J{i + 1}"
 gestor_jugadores = GestorJugadores()

@@ -3,9 +3,12 @@ import sys
 
 # Importar configuración global para guardar selección
 from Config import config
+from PantallaPrincipal import crear_superficie_menu_logica, convertir_mouse_a_logico, presentar_menu_logico
 
 
 def pantalla_mapas(screen, bg_anim):
+    display_screen = screen
+    screen = crear_superficie_menu_logica()
     global current_time
     clock = pygame.time.Clock()
     pygame.display.set_caption("Pantalla Mapas")
@@ -17,8 +20,8 @@ def pantalla_mapas(screen, bg_anim):
     for mando in mandos:
         mando.init()
 
-    # Cooldown per evitar repeticions contínues
-    mando_delay = 200  # mil·lisegons
+    # Cooldown para evitar repeticiones continuas al navegar con mando.
+    mando_delay = 200
     last_input_time = pygame.time.get_ticks()
 
     # BOTON ATRAS
@@ -61,7 +64,7 @@ def pantalla_mapas(screen, bg_anim):
     name_surfs = [font.render(name, True, (255,255,255)) for name in map_names]
 
     # MAPAS
-    mapas = []  # lista de tuplas (mini, big, rect, name_surf)
+    mapas = []  # Miniatura, previsualización, rectángulo de clic y nombre renderizado.
     x = 185
     start_y = 220
     gap = 15
@@ -93,7 +96,7 @@ def pantalla_mapas(screen, bg_anim):
 
     running = True
     while running:
-        mouse_pos = pygame.mouse.get_pos()
+        mouse_pos = convertir_mouse_a_logico(pygame.mouse.get_pos(), display_screen)
         mouse_click = pygame.mouse.get_pressed()[0]
 
         for event in pygame.event.get():
@@ -101,7 +104,7 @@ def pantalla_mapas(screen, bg_anim):
                 pygame.quit()
                 sys.exit()
 
-            # --------- DETECCIÓN DE TIPO DE INPUT ------------
+            # Registra el último tipo de entrada para mostrar las ayudas visuales correctas.
             if event.type in [pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN, pygame.MOUSEMOTION]:
                 last_input_type = "teclado"
             elif event.type in [pygame.JOYBUTTONDOWN, pygame.JOYAXISMOTION, pygame.JOYHATMOTION]:
@@ -113,14 +116,14 @@ def pantalla_mapas(screen, bg_anim):
                 mandos.append(nuevo)
 
             elif event.type == pygame.JOYHATMOTION and event.hat == 0:
-                _, hat_y = event.value  # D-pad: arriba −1, abajo 1
+                _, hat_y = event.value  # D-pad vertical para cambiar de fase.
                 if hat_y == -1:
                     selected_index = (selected_index + 1) % len(mapas)
                 elif hat_y == 1:
                     selected_index = (selected_index - 1) % len(mapas)
                 config.selected_map = selected_index + 1
 
-            # SOLO PERMITE QUE EL PRIMER MANDO MUEVA EL STICK
+            # Solo el primer mando controla la selección de mapa.
             elif event.type == pygame.JOYAXISMOTION:
                 if event.axis == 1:  # eje vertical
                     if axis_ready and abs(event.value) > THRESHOLD:
@@ -136,16 +139,16 @@ def pantalla_mapas(screen, bg_anim):
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     from PantallaConfigPartida import pantalla2_main
-                    pantalla2_main(screen, bg_anim)
+                    pantalla2_main(display_screen, bg_anim)
                     return
 
                 if event.key == pygame.K_LCTRL or event.key == pygame.K_RCTRL:
                     from PantallaAudio import pantalla_audio
-                    pantalla_audio(screen, bg_anim, volver_callback=pantalla_mapas)
+                    pantalla_audio(display_screen, bg_anim, volver_callback=pantalla_mapas)
 
                 elif event.key == pygame.K_RETURN and selected_index >= 0:
                     from PantallaPersonajes import pantalla_personajes
-                    pantalla_personajes(screen, bg_anim)
+                    pantalla_personajes(display_screen, bg_anim)
                     return
 
                 elif event.key == pygame.K_DOWN:
@@ -163,18 +166,18 @@ def pantalla_mapas(screen, bg_anim):
                 # Botón ATRÁS
                 if atras_rect.collidepoint(mouse_pos):
                     from PantallaConfigPartida import pantalla2_main
-                    pantalla2_main(screen, bg_anim)
+                    pantalla2_main(display_screen, bg_anim)
                     return
 
                 # Botón SIGUIENTE
                 if siguiente_rect.collidepoint(mouse_pos) and selected_index >= 0:
                     from PantallaPersonajes import pantalla_personajes
-                    pantalla_personajes(screen, bg_anim)
+                    pantalla_personajes(display_screen, bg_anim)
                     return
 
                 if audio_rect.collidepoint(mouse_pos):
                     from PantallaAudio import pantalla_audio
-                    pantalla_audio(screen, bg_anim, volver_callback=pantalla_mapas)
+                    pantalla_audio(display_screen, bg_anim, volver_callback=pantalla_mapas)
 
                 # CLIC SOBRE MAPA
                 for idx, (mini, big, rect, name_surf) in enumerate(mapas):
@@ -182,7 +185,7 @@ def pantalla_mapas(screen, bg_anim):
                         if idx == selected_index and current_time - last_click_time <= double_click_delay:
                             # Doble clic sobre el mapa ya seleccionado → avanzar pantalla
                             from PantallaPersonajes import pantalla_personajes
-                            pantalla_personajes(screen, bg_anim)
+                            pantalla_personajes(display_screen, bg_anim)
                             return
                         else:
                             # Selección normal de mapa
@@ -193,26 +196,27 @@ def pantalla_mapas(screen, bg_anim):
 
 
             elif event.type == pygame.JOYBUTTONDOWN:
-                if event.button == 0:  # A → següent pantalla
+                if event.button == 0:  # Botón A: avanzar a selección de personajes.
                     from PantallaPersonajes import pantalla_personajes
-                    pantalla_personajes(screen, bg_anim)
+                    pantalla_personajes(display_screen, bg_anim)
                     return
 
-                elif event.button == 1:  # B → enrere
+                elif event.button == 1:  # Botón B: volver atrás.
                     from PantallaConfigPartida import pantalla2_main
-                    pantalla2_main(screen, bg_anim)
+                    pantalla2_main(display_screen, bg_anim)
                     return
 
-                elif event.button in (7, 9):  # OPTIONS → pantalla audio
+                elif event.button in (7, 9):  # El botón Options abre los ajustes.
                     from PantallaAudio import pantalla_audio
-                    pantalla_audio(screen, bg_anim, volver_callback=pantalla_mapas)
+                    pantalla_audio(display_screen, bg_anim, volver_callback=pantalla_mapas)
 
 
 
 
         # Dibujar fondo y marco
         bg_anim.update()
-        bg_anim.draw(screen)
+        bg_anim.draw(display_screen)
+        screen.fill((0, 0, 0, 0))
         screen.blit(marco, marco_rect)
 
         # Dibujar mapas, hover y selección fija
@@ -237,7 +241,7 @@ def pantalla_mapas(screen, bg_anim):
             else:
                 screen.blit(img, rc)
 
-        # ayuda visual botones
+        # Ayudas visuales del control activo.
         if last_input_type == "mando":
             imagen = imagen_boton_b
         else:
@@ -277,5 +281,6 @@ def pantalla_mapas(screen, bg_anim):
         title_rect = title_surf.get_rect(center=(537, 98))
         screen.blit(title_surf, title_rect)
 
+        presentar_menu_logico(display_screen, screen)
         pygame.display.flip()
         clock.tick(60)

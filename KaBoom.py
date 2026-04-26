@@ -4,11 +4,12 @@ import sys
 import math
 import random
 import time
-from PIL import Image
+import PIL.Image as PILImage
 from Config import config, audio
 from ConfiguraciónMandos import gestor_jugadores
 from PausaPartida import menu_pausa
 from itertools import combinations
+from PantallaPrincipal import crear_pantalla_completa
 
 
 # ------------------------------------------------------------------------------------
@@ -38,7 +39,7 @@ TILE_SIZE = 40
 GRID_COLS = 21
 GRID_ROWS = 17
 
-# --- DIMENSIONES ---
+# Dimensiones lógicas del tablero y de las zonas laterales de HUD.
 SCOREBOARD_AREA_WIDTH = 250  # Ancho del área en cada lado para los marcadores.
 GRID_WIDTH = GRID_COLS * TILE_SIZE  # Ancho de la cuadrícula del juego.
 WIDTH = GRID_WIDTH + 2 * SCOREBOARD_AREA_WIDTH  # Ancho total de la ventana.
@@ -68,7 +69,7 @@ CURSES = {
                    "clear_effect": lambda p, c: p._clear_curse_effects(c)},
 }
 
-pygame.display.set_caption("Bomberman - Maldiciones Rebotando")
+pygame.display.set_caption("KaBoom")
 
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
@@ -80,6 +81,14 @@ EXPLOSION_DURATION = 0.75
 PUSH_SPEED = 3
 
 exploding_blocks = {}
+
+
+def presentar_superficie_escalada(screen, logical_surface):
+    if logical_surface.get_size() == screen.get_size():
+        screen.blit(logical_surface, (0, 0))
+    else:
+        frame = pygame.transform.smoothscale(logical_surface, screen.get_size())
+        screen.blit(frame, (0, 0))
 
 
 # ------------------------------------------------------------------------------------
@@ -227,7 +236,7 @@ class AnimatedBackground:
 
         try:
             # Usamos la librería PIL (Pillow) para abrir el GIF
-            pil_image = Image.open(gif_path)
+            pil_image = PILImage.open(gif_path)
             # Obtenemos la duración de cada fotograma desde el propio GIF
             self.frame_duration = pil_image.info.get('duration', 100)
 
@@ -342,6 +351,18 @@ def tile_blocked_for_player(grid, bombs, tile_x, tile_y, player):
                 else:
                     return True
         return False
+
+
+def registrar_jugadores_pasables_en_bomba(bomba, jugadores):
+    bomb_rect = pygame.Rect(bomba.pos_x, bomba.pos_y, TILE_SIZE, TILE_SIZE)
+    for jugador in jugadores:
+        if getattr(jugador, "is_eliminated", False):
+            continue
+        try:
+            if jugador.get_hitbox().colliderect(bomb_rect):
+                bomba.passable_players.add(jugador)
+        except Exception:
+            continue
 
 
 def generar_poderes_al_morir(grid, bombs, powerups, players):
@@ -465,7 +486,7 @@ def draw_timer(surface, remaining_time):
 
 
 # ------------------------------------------------------------------------------------
-# NUEVA FUNCIÓN: Dibujar los marcadores de sets
+# Marcadores laterales de sets ganados
 # ------------------------------------------------------------------------------------
 def draw_scoreboards(surface, players, scoreboard_images, set_positions, total_width, total_height):
     if not scoreboard_images:
@@ -855,7 +876,7 @@ class BloqueFinal:
 
 
 # ------------------------------------------------------------------------------------
-# Clase Player (sin cambios)
+# Jugador humano o CPU dentro de la partida
 # ------------------------------------------------------------------------------------
 class Player:
     INVERT_COMBINATIONS = [
@@ -957,7 +978,7 @@ class Player:
         return int(cx // TILE_SIZE), int(cy // TILE_SIZE)
 
     def check_collision(self, grid, bombs):
-        # SI ES FANTASMA, APLICA REGLAS DE COLISIÓN ESPECIALES
+        # Los fantasmas usan colisiones reducidas para atravesar bloques rompibles y bombas.
         if self.is_ghost:
             rect = self.get_hitbox()
             left_cell = rect.left // TILE_SIZE
@@ -968,14 +989,12 @@ class Player:
             for cell_x in range(left_cell, right_cell + 1):
                 for cell_y in range(top_cell, bottom_cell + 1):
                     if cell_x < 0 or cell_x >= GRID_COLS or cell_y < 0 or cell_y >= GRID_ROWS:
-                        return True  # Choca con los límites exteriores del mapa
-                    # Un fantasma solo choca con muros irrompibles (2), límites (3) y bloques finales (4)
-                    if grid[cell_y][cell_x] in (2, 3, 4):  # <--- AÑADIDO
                         return True
-            # Los fantasmas no chocan con bombas ni con bloques rompibles.
+                    if grid[cell_y][cell_x] in (2, 3, 4):
+                        return True
             return False
 
-        # CÓDIGO ORIGINAL PARA JUGADORES VIVOS (SIN CAMBIOS)
+        # Los jugadores vivos chocan con límites, muros, bloques rompibles y bloques finales.
         rect = self.get_hitbox()
         left_cell = rect.left // TILE_SIZE
         right_cell = (rect.right - 1) // TILE_SIZE
@@ -985,7 +1004,7 @@ class Player:
             for cell_y in range(top_cell, bottom_cell + 1):
                 if cell_x < 0 or cell_x >= GRID_COLS or cell_y < 0 or cell_y >= GRID_ROWS:
                     return True
-                if grid[cell_y][cell_x] in (1, 2, 3, 4):  # <--- AÑADIDO
+                if grid[cell_y][cell_x] in (1, 2, 3, 4):
                     return True
         for bomb in bombs:
             bomb_rect = pygame.Rect(bomb.pos_x, bomb.pos_y, TILE_SIZE, TILE_SIZE)
@@ -1325,11 +1344,9 @@ class Player:
         # Aura por detrás (solo si hay maldición activa)
         if self.active_curse and CURSES[self.active_curse]["duration"] is not None:
             if not hasattr(Player, 'aura_frames'):
-                import os
-                from PIL import Image
                 aura_path = os.path.join(os.path.dirname(__file__), ASSETS_DIR, "Gadgets", "Efectos_visuales",
                                          "maldicion.gif")
-                pil_image = Image.open(aura_path)
+                pil_image = PILImage.open(aura_path)
                 frames = []
                 try:
                     while True:
@@ -1359,12 +1376,10 @@ class Player:
         # DIBUJO DEL ESCUDO (DETRÁS)
         if self.escudo_active:
             if not hasattr(Player, 'escudo_frames'):
-                import os
-                from PIL import Image
                 escudo_path = os.path.join(os.path.dirname(__file__), ASSETS_DIR, "Gadgets", "Efectos_visuales",
                                            "escudo.gif")
                 try:
-                    pil_image = Image.open(escudo_path)
+                    pil_image = PILImage.open(escudo_path)
                     frames = []
                     while True:
                         frame = pil_image.convert("RGBA")
@@ -1464,6 +1479,7 @@ class Player:
                         lapida.start_slow_fade()
                 new_bomb = Bomb(bomb_tile_x, bomb_tile_y, 1)
                 new_bomb.owner = self
+                registrar_jugadores_pasables_en_bomba(new_bomb, globals().get("players", []))
                 bombs.append(new_bomb)
                 COLOCAR_BOMBA_SOUND.play()
                 self.last_bomb_placed_time = current_time
@@ -1495,6 +1511,7 @@ class Player:
         new_bomb = Bomb(bomb_tile_x, bomb_tile_y, self.bomb_range)
         new_bomb.owner = self
         new_bomb.passable_players.add(self)
+        registrar_jugadores_pasables_en_bomba(new_bomb, globals().get("players", []))
         bombs.append(new_bomb)
         COLOCAR_BOMBA_SOUND.play()
 
@@ -2008,7 +2025,7 @@ class Bomb:
 
                             # Inicia un nuevo rebote de una sola casilla
                             self.hit_by_player(dx, dy, grid, bombs, powerups, players, bounce_length=1)
-                            return  # Salimos para que la nueva animación de rebote tome el control
+                            return  # La animación de rebote pasa a controlar el desplazamiento.
                         else:
                             # Si es una habilidad, desaparecer inmediatamente
                             p.start_disappear()
@@ -2122,7 +2139,7 @@ class Bomb:
 
 
 # ------------------------------------------------------------------------------------
-# Clase Explosion (sin cambios)
+# Animación y celda lógica de explosión
 # ------------------------------------------------------------------------------------
 class Explosion:
     def __init__(self, tile_x, tile_y, explosion_type="normal", direction=None, owner=None):
@@ -2251,7 +2268,7 @@ class Lapida:
 
 
 # ------------------------------------------------------------------------------------
-# Clase DroppedAbility (sin cambios)
+# Animación de habilidades soltadas en el mapa
 # ------------------------------------------------------------------------------------
 class DroppedAbility:
     def __init__(self, start_pos, image, target_cell, ability_type):
@@ -2260,12 +2277,12 @@ class DroppedAbility:
         self.target_cell = target_cell
         self.ability_type = ability_type
 
-        # Animación Fase 1: Subida vertical
+        # Fase inicial: la habilidad sube antes de desplazarse a su celda final.
         self.rise_height = 40  # Píxeles que sube sobre el jugador
         self.rise_duration = 0.4  # Segundos para subir
         self.pos_after_rise = (self.start_x, self.start_y - self.rise_height)
 
-        # Animación Fase 2: Arco parabólico
+        # Segunda fase: trayectoria en arco hasta la casilla disponible.
         self.arc_duration = 1.1  # Segundos para el arco
         self.target_pos = (
             target_cell[0] * TILE_SIZE + TILE_SIZE // 2,
@@ -2523,7 +2540,7 @@ def check_pickup(players, powerups, lapidas):
         if item in powerups:
             powerups.remove(item)
 
-    # La lógica de las lápidas no necesita cambios.
+    # Las lápidas activas conceden maldiciones al primer jugador vivo que las pisa.
     for lapida in lapidas:
         if lapida.state != "active":
             continue
@@ -2797,17 +2814,15 @@ def check_curse_transmission(players, cooldown_set):
             if pair_key in cooldown_set:
                 continue
 
-            # Comprobar si las maldiciones son transmisibles
+            # Solo se intercambian maldiciones marcadas como transmisibles.
             p1_curse = player1.active_curse
             p2_curse = player2.active_curse
             p1_transmittable = p1_curse and CURSES[p1_curse].get("transmittable", False)
             p2_transmittable = p2_curse and CURSES[p2_curse].get("transmittable", False)
 
-            # Si ninguna de las maldiciones es transmisible, no hacer nada
             if not p1_transmittable and not p2_transmittable:
                 continue
 
-            # Realizar el intercambio de maldiciones y tiempos
             print(
                 f"¡Transmisión de maldición entre Jugador {player1.player_index + 1} y Jugador {player2.player_index + 1}!")
 
@@ -2817,11 +2832,10 @@ def check_curse_transmission(players, cooldown_set):
             player1.receive_transmitted_curse(p2_curse, p2_ends_at)
             player2.receive_transmitted_curse(p1_curse, p1_ends_at)
 
-            # Añadir el par al set de cooldown para evitar transmisiones infinitas
+            # Evita que dos jugadores intercambien la misma maldición en cada frame mientras se tocan.
             cooldown_set.add(pair_key)
 
         else:
-            # Si los jugadores no se tocan, y estaban en cooldown, quitar el cooldown
             if pair_key in cooldown_set:
                 cooldown_set.remove(pair_key)
 
@@ -2829,8 +2843,8 @@ def check_curse_transmission(players, cooldown_set):
 # Bucle principal
 # ------------------------------------------------------------------------------------
 def iniciar_partida(screen):
-# Cargar datos partida
-    screen = pygame.display.set_mode((WIDTH, HEIGHT))
+    # Carga configuración, recursos y estado inicial de la partida.
+    screen = crear_pantalla_completa()
     MUSIC_PATH = os.path.join(ASSETS_DIR, "Sonidos_juego", "musica_fondo", "juego.mp3")
     pygame.mixer.music.load(MUSIC_PATH)
     pygame.mixer.music.set_volume(audio.volume)
@@ -2890,8 +2904,14 @@ def iniciar_partida(screen):
         EMPATE_IMG = None
 
     global players
+
+
     players = []
     color_pool = [RED, BLUE, (0, 255, 0), (255, 255, 0)]
+
+    # --- NUEVO: LISTA PARA LOS CEREBROS DE LA IA ---
+    cerebros_ia = []
+    # -----------------------------------------------
 
     for idx, jugador in enumerate(gestor_jugadores.todos()):
         if idx >= len(posiciones_iniciales): break
@@ -2899,12 +2919,16 @@ def iniciar_partida(screen):
         personaje_idx = jugador.get("indice", 0)
         tile_x, tile_y = posiciones_iniciales[idx]
         color = color_pool[idx % len(color_pool)]
+
         if tipo == "teclado":
             controls = controles_teclado
         elif tipo == "mando":
             controls = {"instance_id": jugador["instance_id"]}
+        elif tipo == "cpu":  # <--- NUEVO: DEJAMOS PASAR A LA CPU
+            controls = {"cpu": True}  # Le damos unos controles virtuales
         else:
             continue
+
         nombre_personaje = nombres_por_indice.get(personaje_idx, "Mork")
         animaciones = cargar_animaciones_personaje(nombre_personaje)
         portrait_image = None
@@ -2916,12 +2940,22 @@ def iniciar_partida(screen):
             print(f"ADVERTENCIA: No se pudo cargar el retrato para {nombre_personaje}: {e}")
             portrait_image = pygame.Surface((80, 80))
             portrait_image.fill((50, 50, 50))
+
         nuevo_jugador = Player(tile_x, tile_y, color, controls)
         nuevo_jugador.animaciones = animaciones
         nuevo_jugador.portrait_image = portrait_image
         nuevo_jugador.player_index = idx
         nuevo_jugador.ghost_animations = cargar_animaciones_fantasma_por_direccion(idx)
         players.append(nuevo_jugador)
+
+        # --- NUEVO: ASIGNAR EL CEREBRO A LA CPU ---
+        if tipo == "cpu":
+            from IA_CPU import CerebroCPU  # Importamos la IA aquí por seguridad
+
+            nuevo_cerebro = CerebroCPU(jugador["id_jugador"])
+            cerebros_ia.append((nuevo_cerebro, nuevo_jugador))
+            nuevo_jugador.cerebro_ia = nuevo_cerebro
+        # ------------------------------------------
 
     scoreboard_images = {}
     sets_to_win_value = config.set_options[config.current_set_index]
@@ -3109,7 +3143,26 @@ def iniciar_partida(screen):
                     if set_end_sequence_start_time and player != set_winner: continue
                     if player.is_eliminated: continue
                     if player.is_invulnerable and time.time() > player.invulnerable_until: player.is_invulnerable = False
-                    if 'up' in player.controls:
+
+                    # --- 1. LÓGICA DE LA CPU ---
+                    if hasattr(player, 'cerebro_ia') and player.cerebro_ia is not None:
+                        # El cerebro analiza el entorno y devuelve un diccionario de botones pulsados
+                        inputs_cpu = player.cerebro_ia.pensar(player, grid, bombs, players)
+
+                        if inputs_cpu.get("up"):
+                            player.move("up", grid, bombs, powerups, lapidas)
+                        elif inputs_cpu.get("down"):
+                            player.move("down", grid, bombs, powerups, lapidas)
+                        elif inputs_cpu.get("left"):
+                            player.move("left", grid, bombs, powerups, lapidas)
+                        elif inputs_cpu.get("right"):
+                            player.move("right", grid, bombs, powerups, lapidas)
+
+                        if inputs_cpu.get("bomb"):
+                            player.place_bomb(bombs, powerups, grid, lapidas)
+
+                        # --- 2. LÓGICA DEL TECLADO ---
+                    elif 'up' in player.controls:
                         if keys[player.controls['up']]:
                             player.move("up", grid, bombs, powerups, lapidas)
                         elif keys[player.controls['down']]:
@@ -3299,13 +3352,14 @@ def iniciar_partida(screen):
                             set_winner.set_winner_start_time = time.time()
                             if GANADOR_SET_SOUND: GANADOR_SET_SOUND.play()
 
-            # --- DIBUJADO ---
+            # Dibuja el frame completo de la partida.
             background_gif.update()
-            background_gif.draw(screen)
+            frame_surface = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+            background_gif.draw(frame_surface)
             game_surface = pygame.Surface((GRID_WIDTH, HEIGHT), pygame.SRCALPHA)
             draw_grid(game_surface, grid, SUELO1, SUELO2, STONE, BRICK, LIMIT_IMG)
 
-            # Dibujar todos los objetos del mapa si la partida está en juego
+            # Los objetos del mapa se actualizan únicamente durante el estado jugable.
             if estado_set == "jugando":
                 for bloque in final_blocks: bloque.draw_marker(game_surface)
                 for lapida in lapidas: lapida.draw(game_surface)
@@ -3320,7 +3374,7 @@ def iniciar_partida(screen):
                         explosion.draw(game_surface)
                 for bloque in final_blocks: bloque.draw(game_surface)
 
-            # Dibujar jugadores VIVOS por encima de los objetos
+            # Los jugadores vivos se ordenan por coordenada vertical para simular profundidad.
             drawable_players = [set_winner] if set_end_sequence_start_time and set_winner else players
             sorted_players = sorted([p for p in drawable_players if not p.is_ghost], key=lambda p: p.y)
             for p in sorted_players:
@@ -3332,18 +3386,18 @@ def iniciar_partida(screen):
                     p.draw(game_surface)
 
             draw_timer(game_surface, remaining_time)
-            screen.blit(game_surface, (SCOREBOARD_AREA_WIDTH, 0))
-            draw_scoreboards(screen, players, scoreboard_images, set_positions, WIDTH, HEIGHT)
+            frame_surface.blit(game_surface, (SCOREBOARD_AREA_WIDTH, 0))
+            draw_scoreboards(frame_surface, players, scoreboard_images, set_positions, WIDTH, HEIGHT)
 
             # Dibujar textos de animación ("PREPARADOS", "GANADOR", etc.)
             if estado_set == "preparados":
-                if draw_animated_text(screen, PREPARADOS_IMG, tiempo_anim_texto, duration=1.5):
+                if draw_animated_text(frame_surface, PREPARADOS_IMG, tiempo_anim_texto, duration=1.5):
                     estado_set = "adelante"
                     tiempo_anim_texto = time.time()
                     if ADELANTE_SOUND: ADELANTE_SOUND.play()
 
             elif estado_set == "adelante":
-                if draw_animated_text(screen, ADELANTE_IMG, tiempo_anim_texto, duration=1.5):
+                if draw_animated_text(frame_surface, ADELANTE_IMG, tiempo_anim_texto, duration=1.5):
                     estado_set = "jugando"
                     start_time = time.time()
 
@@ -3365,7 +3419,7 @@ def iniciar_partida(screen):
                         temp_img = scaled_img.copy()
                         temp_img.set_alpha(int(max(0, alpha)))
                         img_rect = temp_img.get_rect(center=(WIDTH / 2, HEIGHT / 2))
-                        screen.blit(temp_img, img_rect)
+                        frame_surface.blit(temp_img, img_rect)
                     else:
                         date_prisa_anim_start_time = None
 
@@ -3393,14 +3447,14 @@ def iniciar_partida(screen):
                         img_ganador_set = GANADOR_SET_IMG.copy()
                         img_ganador_set.set_alpha(alpha)
                         rect_ganador = img_ganador_set.get_rect(center=(WIDTH / 2, HEIGHT / 2 - 40))
-                        screen.blit(img_ganador_set, rect_ganador)
+                        frame_surface.blit(img_ganador_set, rect_ganador)
 
                         # Dibujar "jX.png" debajo
                         if 0 <= set_winner.player_index < len(JUGADOR_VICTORIA_IMGS):
                             img_jugador = JUGADOR_VICTORIA_IMGS[set_winner.player_index].copy()
                             img_jugador.set_alpha(alpha)
                             rect_jugador = img_jugador.get_rect(center=(WIDTH / 2, HEIGHT / 2 + 40))
-                            screen.blit(img_jugador, rect_jugador)
+                            frame_surface.blit(img_jugador, rect_jugador)
 
                     # El set termina en empate (no hay ganador)
                     elif not set_winner and SET_FINALIZADO_IMG and EMPATE_IMG:
@@ -3409,14 +3463,15 @@ def iniciar_partida(screen):
                         img_set_fin = SET_FINALIZADO_IMG.copy()
                         img_set_fin.set_alpha(alpha)
                         rect_fin = img_set_fin.get_rect(center=(WIDTH / 2, HEIGHT / 2 - 40))
-                        screen.blit(img_set_fin, rect_fin)
+                        frame_surface.blit(img_set_fin, rect_fin)
 
                         # Dibujar "empate.png" debajo
                         img_empate = EMPATE_IMG.copy()
                         img_empate.set_alpha(alpha)
                         rect_empate = img_empate.get_rect(center=(WIDTH / 2, HEIGHT / 2 + 40))
-                        screen.blit(img_empate, rect_empate)
+                        frame_surface.blit(img_empate, rect_empate)
 
+            presentar_superficie_escalada(screen, frame_surface)
             pygame.display.flip()
             if estado_set == "jugando" and set_end_sequence_start_time and (
                     time.time() - set_end_sequence_start_time > 3.0):
@@ -3442,23 +3497,25 @@ def iniciar_partida(screen):
         victory_start_time = time.time()
         while time.time() - victory_start_time < 5.0:
             background_gif.update()
-            background_gif.draw(screen)
+            frame_surface = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+            background_gif.draw(frame_surface)
             game_surface.fill((0, 0, 0, 0))
             draw_grid(game_surface, grid, SUELO1, SUELO2, STONE, BRICK, LIMIT_IMG)
             match_winner.draw(game_surface)
             draw_timer(game_surface, 0)
-            screen.blit(game_surface, (SCOREBOARD_AREA_WIDTH, 0))
-            draw_scoreboards(screen, players, scoreboard_images, set_positions, WIDTH, HEIGHT)
+            frame_surface.blit(game_surface, (SCOREBOARD_AREA_WIDTH, 0))
+            draw_scoreboards(frame_surface, players, scoreboard_images, set_positions, WIDTH, HEIGHT)
             if GANADOR_PARTIDA_IMG and JUGADOR_VICTORIA_IMGS:
                 rect_partida = GANADOR_PARTIDA_IMG.get_rect(center=(WIDTH / 2, HEIGHT / 2 - 40))
-                screen.blit(GANADOR_PARTIDA_IMG, rect_partida)
+                frame_surface.blit(GANADOR_PARTIDA_IMG, rect_partida)
                 if 0 <= match_winner.player_index < len(JUGADOR_VICTORIA_IMGS):
                     rect_jugador_final = JUGADOR_VICTORIA_IMGS[match_winner.player_index].get_rect(
                         center=(WIDTH / 2, HEIGHT / 2 + 40))
-                    screen.blit(JUGADOR_VICTORIA_IMGS[match_winner.player_index], rect_jugador_final)
+                    frame_surface.blit(JUGADOR_VICTORIA_IMGS[match_winner.player_index], rect_jugador_final)
             if confeti_gif:
                 confeti_gif.update()
-                confeti_gif.draw(screen)
+                confeti_gif.draw(frame_surface)
+            presentar_superficie_escalada(screen, frame_surface)
             pygame.display.flip()
             clock.tick(60)
 
@@ -3466,8 +3523,6 @@ def iniciar_partida(screen):
     reiniciar_estado()
     from PantallaConfigPartida import pantalla2_main
     from PantallaPrincipal import BackgroundAnimation
-    MENU_WIDTH = 800
-    MENU_HEIGHT = 600
-    screen = pygame.display.set_mode((MENU_WIDTH, MENU_HEIGHT))
+    screen = crear_pantalla_completa()
     bg_anim = BackgroundAnimation(screen.get_width(), screen.get_height())
     pantalla2_main(screen, bg_anim)

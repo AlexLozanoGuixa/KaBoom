@@ -19,14 +19,14 @@ ROJO_HOVER = (255, 200, 200)
 TIPOS_DE_VOLUMEN = ["GENERAL"]
 
 last_input_method = "keyboard"
-selected_element_index = 0  # Índice del elemento seleccionado (0 para slider, 1 para casilla1, etc.)
-hover_casillas = [False] * 5  # Lista para controlar el hover de las casillas
-ultimo_index_hover = 0  # Índice del último hover para evitar cambios innecesarios
+selected_element_index = 0  # Elemento activo dentro del menú de ajustes.
+hover_casillas = [False] * 5  # Estado visual de cada opción interactiva.
+ultimo_index_hover = 0  # Última opción señalada por el cursor.
 opciones_modo_pantalla = ["Pantalla completa", "Ventana", "Ventana completa"]
-indice_modo_actual = 1  # (por defecto)
-tiempo_ultimo_movimiento = 0  # Para controlar el tiempo entre movimientos de mando
+indice_modo_actual = 1  # Modo de pantalla inicial.
+tiempo_ultimo_movimiento = 0  # Controla el intervalo entre entradas de mando.
 JOYSTICK_COOLDOWN = 200  # milisegundos
-last_joystick_move_time = 0 # tiempo del último movimiento del joystick
+last_joystick_move_time = 0  # Último movimiento registrado del joystick.
 
 def volumen_log(valor_slider):
     return math.pow(valor_slider, 2)  # Aplicar una curva cuadrática para suavizar el volumen y tener una mejor respuesta
@@ -64,14 +64,19 @@ class SliderRect:
 
 def inicializar_componentes_ui(screen):
     try:
+        escala_x = screen.get_width() / 800
+        escala_y = screen.get_height() / 600
+        tamaño_flecha = (max(40, int(40 * escala_x)), max(40, int(40 * escala_y)))
         boton_atras = pygame.transform.scale(
             pygame.image.load("Media/Menu/Botones/siguiente.png"),
-            (40, 40))
+            tamaño_flecha)
         boton_atras_rotate = pygame.transform.rotate(boton_atras, 180)
     except pygame.error:
         print("Error al cargar la imagen: siguiente.png")
         sys.exit(1)
-    rect_atras = boton_atras_rotate.get_rect(bottomleft=(30, screen.get_height() - 25))
+    rect_atras = boton_atras_rotate.get_rect(
+        bottomleft=(max(25, int(30 * escala_x)), screen.get_height() - max(25, int(25 * escala_y)))
+    )
 
     ancho = 750
     alto = 450
@@ -159,18 +164,15 @@ def dibujar_ui(screen, bg_anim, fondo_gris, rect_fondo_gris, boton_atras, rect_a
     casilla_modo_rect = slider_bg_rect.copy()
     casilla_modo_rect.y = slider_bg_rect.bottom + 40
 
-    # Casillas adicionales
+    # Casillas adicionales en vertical
     casilla_ancho = 250
     casilla_alto = 50
-    espacio_horizontal = 40
-    total_ancho = casilla_ancho * 2 + espacio_horizontal
-    casillas_top = casilla_modo_rect.bottom + 40
-    casilla1_left = rect_fondo_gris.centerx - total_ancho // 2
-    casilla2_left = rect_fondo_gris.centerx + espacio_horizontal // 2
-    casilla1_rect = pygame.Rect(casilla1_left, casillas_top, casilla_ancho, casilla_alto)
-    casilla2_rect = pygame.Rect(casilla2_left, casillas_top, casilla_ancho, casilla_alto)
-    casilla_roja_top = casilla1_rect.bottom + 40
-    casilla_roja_rect = pygame.Rect(rect_fondo_gris.centerx - 125, casilla_roja_top, 250, 50)
+    espacio_vertical = 18
+    casillas_top = casilla_modo_rect.bottom + 25
+    casilla_left = rect_fondo_gris.centerx - casilla_ancho // 2
+    casilla1_rect = pygame.Rect(casilla_left, casillas_top, casilla_ancho, casilla_alto)
+    casilla2_rect = pygame.Rect(casilla_left, casilla1_rect.bottom + espacio_vertical, casilla_ancho, casilla_alto)
+    casilla_roja_rect = pygame.Rect(casilla_left, casilla2_rect.bottom + espacio_vertical, 250, 50)
 
     # Lista de todas las casillas en orden
     global casillas_rects
@@ -281,7 +283,7 @@ def dibujar_ui(screen, bg_anim, fondo_gris, rect_fondo_gris, boton_atras, rect_a
     texto_valor = fuente_opcion.render(modo_actual, True, NEGRO)
     screen.blit(texto_valor, texto_valor.get_rect(center=(x_valor, centro_y)))
 
-    # Cambio con click
+    # Actualización del modo de pantalla mediante ratón.
     mouse_buttons = pygame.mouse.get_pressed()
     if mouse_buttons[0]:  # Click izquierdo
         if hover_izq:
@@ -571,14 +573,25 @@ def pantalla_audio(screen, bg_anim, volver_callback):
     hover_casillas = [False] * 4
     ultimo_hover_index = 0
 
-    pygame.display.set_caption("Pantalla Audio")
+    pygame.display.set_caption("KaBoom - Ajustes")
     clock = pygame.time.Clock()
 
     flecha_izquierda_img = pygame.image.load("Media/Menu/Pantalla_configuracion_partida/izquierda.png").convert_alpha()
     flecha_derecha_img = pygame.image.load("Media/Menu/Pantalla_configuracion_partida/derecha.png").convert_alpha()
 
-    imagen_boton_b = pygame.transform.scale(pygame.image.load("Media/Menu/Botones/boton_B.png").convert_alpha(), (40, 40))
-    imagen_escape = pygame.transform.scale(pygame.image.load("Media/Menu/Botones/escape.png").convert_alpha(), (40, 40))
+    escala_x = screen.get_width() / 800
+    escala_y = screen.get_height() / 600
+    tam_boton_b = (max(50, int(50 * escala_x)), max(50, int(50 * escala_y)))
+    tam_escape = (max(40, int(40 * escala_x)), max(40, int(40 * escala_y)))
+
+    imagen_boton_b = pygame.transform.scale(
+        pygame.image.load("Media/Menu/Botones/boton_B.png").convert_alpha(),
+        tam_boton_b
+    )
+    imagen_escape = pygame.transform.scale(
+        pygame.image.load("Media/Menu/Botones/escape.png").convert_alpha(),
+        tam_escape
+    )
 
     if bg_anim is None:
         class DummyBG:
@@ -594,7 +607,7 @@ def pantalla_audio(screen, bg_anim, volver_callback):
     boton_atras, rect_atras, fondo_gris, rect_fondo_gris = inicializar_componentes_ui(screen)
     sliders = crear_sliders(rect_fondo_gris)
 
-    # FORZAMOS ESTADO INICIAL
+    # Estado inicial de navegación por teclado.
     selected_element_index = 0
     last_input_method = "keyboard"
     hover_casillas = [False, False, False, False]

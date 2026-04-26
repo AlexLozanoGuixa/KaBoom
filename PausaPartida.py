@@ -16,15 +16,15 @@ ROJO_HOVER = (255, 200, 200)
 # Solo un tipo de volumen
 TIPOS_DE_VOLUMEN = ["GENERAL"]
 
-last_input_method = "mouse"  # Puede ser "mouse" o "keyboard"
-selected_element_index = 0  # Índice del elemento seleccionado (0 para slider, 1 para casilla1, etc.)
-hover_casillas = [False] * 5  # Lista para controlar el hover de las casillas
-ultimo_index_hover = 0  # Índice del último hover para evitar cambios innecesarios
+last_input_method = "mouse"  # Último dispositivo usado para navegar por el menú.
+selected_element_index = 0  # Elemento activo dentro del menú de pausa.
+hover_casillas = [False] * 5  # Estado visual de cada opción interactiva.
+ultimo_index_hover = 0  # Última opción señalada por el cursor.
 opciones_modo_pantalla = ["Pantalla completa", "Ventana", "Ventana completa"]
-indice_modo_actual = 1  # (por defecto)
-tiempo_ultimo_movimiento = 0  # Para controlar el tiempo entre movimientos de mando
+indice_modo_actual = 1  # Modo de pantalla inicial.
+tiempo_ultimo_movimiento = 0  # Controla el intervalo entre entradas de mando.
 JOYSTICK_COOLDOWN = 200  # milisegundos
-last_joystick_move_time = 0 # tiempo del último movimiento del joystick
+last_joystick_move_time = 0  # Último movimiento registrado del joystick.
 
 
 class SliderRect:
@@ -119,7 +119,7 @@ def dibujar_ui(screen, bg_anim, fondo_gris, rect_fondo_gris, sliders,
     screen.blit(titulo_surf, titulo_rect)
 
     # Casilla REANUDAR
-    casilla_reanudar_rect = pygame.Rect(rect_fondo_gris.centerx - 125, titulo_rect.bottom + 30, 250, 50)
+    casilla_reanudar_rect = pygame.Rect(rect_fondo_gris.centerx - 125, titulo_rect.bottom + 20, 250, 50)
 
     # Casilla de fondo para el slider
     # Posicionar el slider centrado dentro de la casilla
@@ -128,7 +128,7 @@ def dibujar_ui(screen, bg_anim, fondo_gris, rect_fondo_gris, sliders,
 
     slider_bg_rect = pygame.Rect(
         rect_fondo_gris.centerx - 265,
-        casilla_reanudar_rect.bottom + 40,
+        casilla_reanudar_rect.bottom + 20,
         ancho_slider + 250, 40
     )
 
@@ -137,20 +137,17 @@ def dibujar_ui(screen, bg_anim, fondo_gris, rect_fondo_gris, sliders,
     slider.rect.center = (slider_bg_rect.centerx + 65, slider_bg_rect.centery)
 
     # Casilla modo pantalla
-    casilla_modo_rect = pygame.Rect(slider_bg_rect.left, slider_bg_rect.bottom + 40, slider_bg_rect.width, 40)
+    casilla_modo_rect = pygame.Rect(slider_bg_rect.left, slider_bg_rect.bottom + 20, slider_bg_rect.width, 40)
 
-    # Casillas aprende/guia/salir
+    # Casillas aprende/guia/salir en vertical
     casilla_ancho = 250
     casilla_alto = 40
-    espacio_horizontal = 40
-    total_ancho = casilla_ancho * 2 + espacio_horizontal
-    casillas_top = casilla_modo_rect.bottom + 40
-    casilla1_left = rect_fondo_gris.centerx - total_ancho // 2
-    casilla2_left = rect_fondo_gris.centerx + espacio_horizontal // 2
-    casilla1_rect = pygame.Rect(casilla1_left, casillas_top, casilla_ancho, casilla_alto)
-    casilla2_rect = pygame.Rect(casilla2_left, casillas_top, casilla_ancho, casilla_alto)
-    casilla_roja_top = casilla1_rect.bottom + 40
-    casilla_roja_rect = pygame.Rect(rect_fondo_gris.centerx - 125, casilla_roja_top, 250, 40)
+    espacio_vertical = 15
+    casillas_top = casilla_modo_rect.bottom + 20
+    casilla_left = rect_fondo_gris.centerx - casilla_ancho // 2
+    casilla1_rect = pygame.Rect(casilla_left, casillas_top, casilla_ancho, casilla_alto)
+    casilla2_rect = pygame.Rect(casilla_left, casilla1_rect.bottom + espacio_vertical, casilla_ancho, casilla_alto)
+    casilla_roja_rect = pygame.Rect(casilla_left, casilla2_rect.bottom + espacio_vertical, 250, 40)
 
     casillas_rects = [
         casilla_reanudar_rect,  # [0]
@@ -474,10 +471,10 @@ def menu_pausa(screen, bg_anim, fondo_pausa):
     global selected_element_index, last_input_method, hover_casillas, ultimo_hover_index
     selected_element_index = 0
     last_input_method = "keyboard"
-    hover_casillas = [False] * 4
+    hover_casillas = [False] * 6
     ultimo_hover_index = 0
 
-    pygame.display.set_caption("Pantalla Audio")
+    pygame.display.set_caption("KaBoom - Pausa")
     clock = pygame.time.Clock()
 
     flecha_izquierda_img = pygame.image.load("Media/Menu/Pantalla_configuracion_partida/izquierda.png").convert_alpha()
@@ -499,10 +496,10 @@ def menu_pausa(screen, bg_anim, fondo_pausa):
     fondo_gris, rect_fondo_gris = inicializar_componentes_ui(screen)
     sliders = crear_sliders(rect_fondo_gris)
 
-    # FORZAMOS ESTADO INICIAL
+    # Estado inicial de navegación por teclado.
     selected_element_index = 0
     last_input_method = "keyboard"
-    hover_casillas = [False, False, False, False]
+    hover_casillas = [False] * 6
 
     while True:
         resultado = manejar_eventos(sliders, screen, bg_anim)
@@ -510,6 +507,9 @@ def menu_pausa(screen, bg_anim, fondo_pausa):
             return
 
         screen.blit(fondo_pausa, (0,0))
+        overlay = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 85))
+        screen.blit(overlay, (0, 0))
         dibujar_ui(screen, bg_anim, fondo_gris, rect_fondo_gris, sliders,
                    flecha_izquierda_img, flecha_derecha_img)
         pygame.display.flip()
@@ -591,10 +591,8 @@ def confirmar_salida(screen, bg_anim, fondo_anterior):
                     from EstadoPartida import reiniciar_estado
                     reiniciar_estado()
                     from PantallaConfigPartida import pantalla2_main
-                    from PantallaPrincipal import BackgroundAnimation
-                    MENU_WIDTH = 800
-                    MENU_HEIGHT = 600
-                    screen = pygame.display.set_mode((MENU_WIDTH, MENU_HEIGHT))
+                    from PantallaPrincipal import BackgroundAnimation, crear_pantalla_completa
+                    screen = crear_pantalla_completa()
                     bg_anim = BackgroundAnimation(screen.get_width(), screen.get_height())
                     pantalla2_main(screen, bg_anim)
                     return
@@ -612,10 +610,8 @@ def confirmar_salida(screen, bg_anim, fondo_anterior):
                         from EstadoPartida import reiniciar_estado
                         reiniciar_estado()
                         from PantallaConfigPartida import pantalla2_main
-                        from PantallaPrincipal import BackgroundAnimation
-                        MENU_WIDTH = 800
-                        MENU_HEIGHT = 600
-                        screen = pygame.display.set_mode((MENU_WIDTH, MENU_HEIGHT))
+                        from PantallaPrincipal import BackgroundAnimation, crear_pantalla_completa
+                        screen = crear_pantalla_completa()
                         bg_anim = BackgroundAnimation(screen.get_width(), screen.get_height())
                         pantalla2_main(screen, bg_anim)
                         return
@@ -647,10 +643,8 @@ def confirmar_salida(screen, bg_anim, fondo_anterior):
                         from EstadoPartida import reiniciar_estado
                         reiniciar_estado()
                         from PantallaConfigPartida import pantalla2_main
-                        from PantallaPrincipal import BackgroundAnimation
-                        MENU_WIDTH = 800
-                        MENU_HEIGHT = 600
-                        screen = pygame.display.set_mode((MENU_WIDTH, MENU_HEIGHT))
+                        from PantallaPrincipal import BackgroundAnimation, crear_pantalla_completa
+                        screen = crear_pantalla_completa()
                         bg_anim = BackgroundAnimation(screen.get_width(), screen.get_height())
                         pantalla2_main(screen, bg_anim)
                         return

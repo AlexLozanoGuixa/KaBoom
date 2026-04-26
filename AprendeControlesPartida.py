@@ -20,13 +20,16 @@ def pantalla_controles(screen, fondo_pausa):
         alto_fondo
     )
 
+    escala_x = screen.get_width() / 800
+    escala_y = screen.get_height() / 600
+
     flecha_original = pygame.image.load("Media/Menu/Botones/siguiente.png").convert_alpha()
     flecha_rotada = pygame.transform.rotate(flecha_original, 180)
-    tamaño_base = (40, 40)
-    tamaño_hover = (45, 45)
+    tamaño_base = (max(40, int(40 * escala_x)), max(40, int(40 * escala_y)))
+    tamaño_hover = (max(45, int(44 * escala_x)), max(45, int(44 * escala_y)))
     flecha_img = pygame.transform.scale(flecha_rotada, tamaño_base)
     flecha_rect = flecha_img.get_rect()
-    flecha_rect.bottomleft = (310, 600)
+    flecha_rect.bottomleft = (max(25, int(30 * escala_x)), screen.get_height() - max(25, int(25 * escala_y)))
 
     img_izq = pygame.image.load("Media/Menu/Controles/negroizquierda.png").convert_alpha()
     img_der = pygame.image.load("Media/Menu/Controles/negroderecha.png").convert_alpha()
@@ -61,16 +64,16 @@ def pantalla_controles(screen, fondo_pausa):
     fila_activa = 0
 
     # --- CONFIGURACIÓN DE LAS 4 FLECHAS ---
-    flecha1_izq_pos = (450, 198)
+    flecha1_izq_pos = (fondo_rect.left + 165, fondo_rect.top + 30)
     flecha1_izq_size = (30, 20)
     flecha1_izq_hover_size = (35, 25)
-    flecha1_der_pos = (860, 198)
+    flecha1_der_pos = (fondo_rect.left + 555, fondo_rect.top + 30)
     flecha1_der_size = (30, 20)
     flecha1_der_hover_size = (35, 25)
-    flecha2_izq_pos = (450, 235)
+    flecha2_izq_pos = (fondo_rect.left + 165, fondo_rect.top + 70)
     flecha2_izq_size = (30, 20)
     flecha2_izq_hover_size = (35, 25)
-    flecha2_der_pos = (860, 235)
+    flecha2_der_pos = (fondo_rect.left + 555, fondo_rect.top + 70)
     flecha2_der_size = (30, 20)
     flecha2_der_hover_size = (35, 25)
 

@@ -3,6 +3,7 @@ import sys
 
 from PantallaPrincipal import background_screen
 from PantallaPrincipal import BackgroundAnimation
+from PantallaPrincipal import crear_pantalla_completa
 from PantallaConfigPartida import pantalla2_main
 from PantallaMapas import pantalla_mapas
 from PantallaAudio import pantalla_audio
@@ -11,24 +12,23 @@ from AprendeControles import pantalla_controles
 def main():
     pygame.init()
 
-    # Inicializar el mixer y reproducir la banda sonora de fondo
+    # Inicializa el mezclador de audio antes de cargar música o efectos.
     if not pygame.mixer.get_init():
         pygame.mixer.init()
 
-    # CARGAR EFECTOS DE SONIDO
-    # musica de fondo
-    pygame.mixer.music.load("Media/Sonidos_juego/musica_fondo/menu.mp3")  #
-    pygame.mixer.music.set_volume(1.0)  # volumen al 100%
-    pygame.mixer.music.play(-1)  # -1 para reproducir en bucle indefinido
+    # Música del menú en bucle.
+    pygame.mixer.music.load("Media/Sonidos_juego/musica_fondo/menu.mp3")
+    pygame.mixer.music.set_volume(1.0)
+    pygame.mixer.music.play(-1)
 
-    screen_width, screen_height = 800, 600
-    screen = pygame.display.set_mode((screen_width, screen_height))
-    pygame.display.set_caption("Mi Juego")
+    screen = crear_pantalla_completa()
+    screen_width, screen_height = screen.get_size()
+    pygame.display.set_caption("KaBoom")
 
-    # Cargar o crear elementos compartidos
-    bg_anim = BackgroundAnimation(screen_width, screen_height)  # Asumiendo que está en un módulo común
+    # Fondo animado compartido entre pantallas de menú.
+    bg_anim = BackgroundAnimation(screen_width, screen_height)
 
-    # Mostrar pantalles només si l’usuari les va confirmant
+    # Flujo principal de pantallas antes de iniciar la partida.
     if not background_screen(screen):
         return
     if not pantalla2_main(screen, bg_anim):
@@ -39,10 +39,10 @@ def main():
         return
     if not pantalla_controles(screen, bg_anim):
         return
-    from Bomberman import iniciar_partida
     if not pantalla_personajes(screen, bg_anim):
         return
-    iniciar_partida(screen)  # <<<< Inicia el juego
+    from KaBoom import iniciar_partida
+    iniciar_partida(screen)
 
     pygame.quit()
     sys.exit()
