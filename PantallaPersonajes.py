@@ -2,7 +2,18 @@ import pygame
 import sys
 import math
 from ConfiguraciónMandos import gestor_jugadores
-from PantallaPrincipal import crear_superficie_menu_logica, convertir_mouse_a_logico, presentar_menu_logico
+from PantallaPrincipal import (
+    actualizar_cursor_menu,
+    convertir_mouse_a_logico,
+    crear_superficie_menu_logica,
+    es_evento_control_arcade,
+    es_evento_joystick_relevante,
+    obtener_ultimo_dispositivo_menu,
+    iniciar_cursor_menu,
+    presentar_menu_logico,
+    registrar_actividad_cursor,
+    registrar_dispositivo_menu_evento,
+)
 
 pygame.init()
 
@@ -221,6 +232,7 @@ def pantalla_personajes(screen, bg_anim):
     global mensaje_error, mensaje_timer
     display_screen = screen
     screen = crear_superficie_menu_logica()
+    iniciar_cursor_menu()
 
     pygame.joystick.init()
     mandos = [pygame.joystick.Joystick(i) for i in range(pygame.joystick.get_count())]
@@ -250,6 +262,9 @@ def pantalla_personajes(screen, bg_anim):
     imagen_boton_a = pygame.image.load("Media/Menu/Botones/boton_A.png").convert_alpha()
     imagen_tecla_control = pygame.image.load("Media/Menu/Botones/tecla_control.png").convert_alpha()
     imagen_tecla_enter = pygame.image.load("Media/Menu/Botones/enter.png").convert_alpha()
+    imagen_boton_e = pygame.image.load("Media/Menu/Botones/boton_E.png").convert_alpha()
+    imagen_boton_d = pygame.image.load("Media/Menu/Botones/boton_D.png").convert_alpha()
+    imagen_boton_pause = pygame.image.load("Media/Menu/Botones/pause.png").convert_alpha()
 
     # Escalado base de iconos de ayuda.
     imagen_boton_b = pygame.transform.scale(imagen_boton_b, (50, 50))
@@ -258,6 +273,9 @@ def pantalla_personajes(screen, bg_anim):
     imagen_tecla_escape = pygame.transform.scale(imagen_tecla_escape, (40, 40))
     imagen_tecla_control = pygame.transform.scale(imagen_tecla_control, (50, 40))
     imagen_tecla_enter = pygame.transform.scale(imagen_tecla_enter, (50, 40))
+    imagen_boton_e = pygame.transform.scale(imagen_boton_e, (50, 50))
+    imagen_boton_d = pygame.transform.scale(imagen_boton_d, (50, 50))
+    imagen_boton_pause = pygame.transform.scale(imagen_boton_pause, (40, 40))
 
     # FONDO
     fondo = pygame.transform.scale(pygame.image.load("Media/Menu/fondobasico.png").convert_alpha(), (750, 450))
@@ -305,7 +323,7 @@ def pantalla_personajes(screen, bg_anim):
     DEADZONE = 0.3
     joystick_ready = {}
 
-    last_input_type = "teclado"
+    last_input_type = obtener_ultimo_dispositivo_menu()
 
     def intentar_iniciar_partida():
         global mensaje_error, mensaje_timer
@@ -327,15 +345,15 @@ def pantalla_personajes(screen, bg_anim):
         mouse_pos = convertir_mouse_a_logico(pygame.mouse.get_pos(), display_screen)
 
         for event in pygame.event.get():
+            registrar_actividad_cursor(event)
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
 
             # Registra el último tipo de entrada para mostrar las ayudas visuales correctas.
-            if event.type in [pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN, pygame.MOUSEMOTION]:
-                last_input_type = "teclado"
-            elif event.type in [pygame.JOYBUTTONDOWN, pygame.JOYAXISMOTION, pygame.JOYHATMOTION]:
-                last_input_type = "mando"
+            if event.type in [pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN, pygame.MOUSEMOTION,
+                              pygame.JOYBUTTONDOWN, pygame.JOYAXISMOTION, pygame.JOYHATMOTION]:
+                last_input_type = registrar_dispositivo_menu_evento(event)
 
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 jugador1 = gestor_jugadores.get(0)
@@ -643,7 +661,9 @@ def pantalla_personajes(screen, bg_anim):
                 screen.blit(img, rect)
 
         # Ayudas visuales del control activo.
-        if last_input_type == "mando":
+        if last_input_type == "arcade":
+            imagen = imagen_boton_e
+        elif last_input_type == "mando":
             imagen = imagen_boton_b
         else:
             imagen = imagen_tecla_escape
@@ -652,7 +672,9 @@ def pantalla_personajes(screen, bg_anim):
         pos_y = atras_rect.centery - imagen.get_height() // 2
         screen.blit(imagen, (pos_x, pos_y))
 
-        if last_input_type == "mando":
+        if last_input_type == "arcade":
+            imagen = imagen_boton_d
+        elif last_input_type == "mando":
             imagen = imagen_boton_a
         else:
             imagen = imagen_tecla_enter
@@ -661,7 +683,9 @@ def pantalla_personajes(screen, bg_anim):
         pos_y = siguiente_rect.centery - imagen.get_height() // 2
         screen.blit(imagen, (pos_x, pos_y))
 
-        if last_input_type == "mando":
+        if last_input_type == "arcade":
+            imagen = imagen_boton_pause
+        elif last_input_type == "mando":
             imagen = imagen_boton_options
         else:
             imagen = imagen_tecla_control
@@ -699,5 +723,6 @@ def pantalla_personajes(screen, bg_anim):
             screen.blit(aviso_surf, aviso_rect)
 
         presentar_menu_logico(display_screen, screen)
+        actualizar_cursor_menu()
         pygame.display.flip()
         clock.tick(60)

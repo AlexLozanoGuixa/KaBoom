@@ -9,7 +9,7 @@ from Config import config, audio
 from ConfiguraciónMandos import gestor_jugadores
 from PausaPartida import menu_pausa
 from itertools import combinations
-from PantallaPrincipal import crear_pantalla_completa
+from PantallaPrincipal import crear_pantalla_completa, evento_ventana_inactiva, ocultar_cursor_partida
 
 
 # ------------------------------------------------------------------------------------
@@ -2845,6 +2845,7 @@ def check_curse_transmission(players, cooldown_set):
 def iniciar_partida(screen):
     # Carga configuración, recursos y estado inicial de la partida.
     screen = crear_pantalla_completa()
+    ocultar_cursor_partida()
     MUSIC_PATH = os.path.join(ASSETS_DIR, "Sonidos_juego", "musica_fondo", "juego.mp3")
     pygame.mixer.music.load(MUSIC_PATH)
     pygame.mixer.music.set_volume(audio.volume)
@@ -3042,20 +3043,30 @@ def iniciar_partida(screen):
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT: pygame.quit(); sys.exit()
+                if event.type in (pygame.MOUSEMOTION, pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEWHEEL):
+                    ocultar_cursor_partida()
                 should_pause = False
                 pause_instance_id = "teclado"
                 if estado_set == "jugando":
-                    if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                    if evento_ventana_inactiva(event):
+                        should_pause = True
+                    elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                         should_pause = True
                         pause_instance_id = "teclado"
                     elif event.type == pygame.JOYBUTTONDOWN and event.button in (7, 9):
                         should_pause = True
                         pause_instance_id = event.instance_id
                 if should_pause:
+                    musica_activa = pygame.mixer.get_init() is not None and pygame.mixer.music.get_busy()
+                    if musica_activa:
+                        pygame.mixer.music.pause()
                     pygame.mixer.pause()
                     time_before_pause_sec = time.time()
                     ticks_before_pause_ms = pygame.time.get_ticks()
                     resultado = menu_pausa(screen, pause_instance_id, screen.copy())
+                    ocultar_cursor_partida()
+                    if musica_activa:
+                        pygame.mixer.music.unpause()
                     pygame.mixer.unpause()
                     if resultado == "Salir de la partida": pygame.mixer.music.stop(); FANTASMA_SOUND.stop(); return
                     pause_duration_sec = time.time() - time_before_pause_sec

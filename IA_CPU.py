@@ -25,6 +25,10 @@ class CerebroCPU:
 
     def __init__(self, id_jugador):
         self.id_jugador = id_jugador
+        semilla_id = id_jugador if isinstance(id_jugador, int) else hash(id_jugador)
+        self.rng = random.Random(time.time_ns() ^ ((semilla_id + 1) * 1000003))
+        self.direcciones_preferidas = list(self.DIRECCIONES)
+        self.rng.shuffle(self.direcciones_preferidas)
         self.TILE_SIZE = 40
         self.DURACION_FUEGO = 0.2
         self.EXTRA_SEGURIDAD_FUEGO = 0.5
@@ -67,7 +71,7 @@ class CerebroCPU:
         return 0 <= y < len(grid) and 0 <= x < len(grid[0])
 
     def vecinos(self, x, y, grid):
-        for dx, dy, _ in self.DIRECCIONES:
+        for dx, dy, _ in self.direcciones_preferidas:
             nx, ny = x + dx, y + dy
             if self.in_bounds(nx, ny, grid):
                 yield nx, ny
@@ -344,7 +348,7 @@ class CerebroCPU:
             (cx, cy), camino = cola.popleft()
             if condicion_objetivo(cx, cy):
                 return camino
-            for dx, dy, _ in self.DIRECCIONES:
+            for dx, dy, _ in self.direcciones_preferidas:
                 nx, ny = cx + dx, cy + dy
                 siguiente = (nx, ny)
                 if not self.in_bounds(nx, ny, grid):
@@ -364,7 +368,7 @@ class CerebroCPU:
         while cola:
             cx, cy = cola.popleft()
             reachable.add((cx, cy))
-            for dx, dy, _ in self.DIRECCIONES:
+            for dx, dy, _ in self.direcciones_preferidas:
                 nx, ny = cx + dx, cy + dy
                 siguiente = (nx, ny)
                 if not self.in_bounds(nx, ny, grid):
@@ -393,12 +397,13 @@ class CerebroCPU:
                         sum(1 for capa in capas_secundarias if actual in capa),
                         len(camino),
                         self.distancia_centro(cx, cy, grid),
+                        self.rng.random(),
                     )
                     if mejor_score is None or score < mejor_score:
                         mejor_score = score
                         mejor_camino = camino
 
-            for dx, dy, _ in self.DIRECCIONES:
+            for dx, dy, _ in self.direcciones_preferidas:
                 nx, ny = cx + dx, cy + dy
                 siguiente = (nx, ny)
                 if not self.in_bounds(nx, ny, grid):
@@ -500,7 +505,7 @@ class CerebroCPU:
     def elegir_casilla_adyacente(self, px, py, grid, bloqueadas, peligro_bombas, peligro_final, peligro_maldicion):
         mejor = None
         mejor_score = None
-        for dx, dy, _ in self.DIRECCIONES:
+        for dx, dy, _ in self.direcciones_preferidas:
             nx, ny = px + dx, py + dy
             siguiente = (nx, ny)
             if not self.in_bounds(nx, ny, grid) or siguiente in bloqueadas:
@@ -532,6 +537,103 @@ class CerebroCPU:
             if grid[ay][x] in (1, 2, 3, 4) or (x, ay) in casillas_bombas:
                 return False
         return True
+
+    def linea_de_vision_fantasma(self, ax, ay, bx, by, grid):
+        if ax != bx and ay != by:
+            return False
+
+        if ax == bx:
+            paso = 1 if by > ay else -1
+            for y in range(ay + paso, by, paso):
+                if grid[y][ax] in (1, 2, 3, 4):
+                    return False
+            return True
+
+        paso = 1 if bx > ax else -1
+        for x in range(ax + paso, bx, paso):
+            if grid[ay][x] in (1, 2, 3, 4):
+                return False
+        return True
+
+    def construir_bloqueos_fantasma(self, grid):
+        bloqueadas = set()
+        for y in range(len(grid)):
+            for x in range(len(grid[0])):
+                if grid[y][x] in (2, 3, 4):
+                    bloqueadas.add((x, y))
+        return bloqueadas
+
+    def puede_colocar_bomba_fantasma(self, player, px, py, grid, bombs):
+        if not getattr(player, "is_ghost", False):
+            return False
+        if not self.in_bounds(px, py, grid) or grid[py][px] in (1, 2, 3, 4):
+            return False
+        if time.time() - getattr(player, "last_bomb_placed_time", 0) < getattr(player, "ghost_bomb_cooldown", 30.0):
+            return False
+        return not any(
+            int(getattr(bomba, "tile_x", -1)) == px
+            and int(getattr(bomba, "tile_y", -1)) == py
+            and not getattr(bomba, "exploded", False)
+            for bomba in bombs
+        )
+
+    def elegir_objetivo_fantasma(self, player, px, py, grid, players, bloqueadas):
+        candidatos = []
+        for victima in players:
+            if victima == player:
+                continue
+            if getattr(victima, "is_eliminated", False) or getattr(victima, "is_ghost", False):
+                continue
+            vx, vy = victima.get_center_tile()
+            if not self.in_bounds(vx, vy, grid) or (vx, vy) in bloqueadas:
+                continue
+            ruta = self.buscar_camino_estable(
+                (px, py),
+                lambda cx, cy, tx=vx, ty=vy: (cx, cy) == (tx, ty),
+                grid,
+                bloqueadas,
+            )
+            if ruta:
+                candidatos.append((len(ruta), abs(px - vx) + abs(py - vy), self.rng.random(), victima, ruta))
+
+        if not candidatos:
+            return None, None
+
+        candidatos.sort(key=lambda item: (item[0], item[1], item[2]))
+        _, _, _, victima, ruta = candidatos[0]
+        return victima, ruta
+
+    def pensar_fantasma(self, player, grid, bombs, players):
+        inputs = self.inputs_vacios()
+        self.limpiar_estado()
+        self.limpiar_plan_patada()
+
+        px, py = player.get_center_tile()
+        bloqueadas = self.construir_bloqueos_fantasma(grid)
+        victima, ruta = self.elegir_objetivo_fantasma(player, px, py, grid, players, bloqueadas)
+        if victima is None:
+            return inputs
+
+        vx, vy = victima.get_center_tile()
+        radio_bomba = int(getattr(player, "bomb_range", 1))
+        puede_alcanzar = (
+            abs(px - vx) + abs(py - vy) <= radio_bomba
+            and self.linea_de_vision_fantasma(px, py, vx, vy, grid)
+        )
+
+        if puede_alcanzar and self.puede_colocar_bomba_fantasma(player, px, py, grid, bombs):
+            inputs.update(self.centrarse_en_casilla(player, px, py))
+            if self.tiene_inputs_activos(inputs):
+                return inputs
+            inputs["bomb"] = True
+            return inputs
+
+        if ruta and len(ruta) > 1:
+            siguiente = ruta[1]
+            inputs.update(self.mover_milimetrico(player, px, py, siguiente[0], siguiente[1]))
+        elif ruta and len(ruta) == 1:
+            inputs.update(self.centrarse_en_casilla(player, px, py))
+        return inputs
 
     def puede_escapar_si_pone_bomba(self, player, inicio, grid, muros_fijos, muros_rompibles, casillas_bombas, radio,
                                     peligro_bombas, peligro_final, peligro_maldicion):
@@ -725,7 +827,7 @@ class CerebroCPU:
                 posibles_victimas.append(victima)
 
         if posibles_victimas:
-            victima = random.choice(posibles_victimas)
+            victima = self.rng.choice(posibles_victimas)
             self.estado = "CAZAR"
             self.objetivo_entidad = victima
             self.coord_fijada_caza = victima.get_center_tile()
@@ -741,13 +843,13 @@ class CerebroCPU:
 
         if powerups_buenos:
             self.estado = "POWERUP"
-            self.objetivo_coord = random.choice(powerups_buenos)
+            self.objetivo_coord = self.rng.choice(powerups_buenos)
             return
 
         fronteras = self.obtener_fronteras(zona_segura, muros_rompibles, grid)
         if fronteras:
             self.estado = "ROMPER"
-            self.objetivo_coord = random.choice(fronteras)
+            self.objetivo_coord = self.rng.choice(fronteras)
 
     def ejecutar_romper(self, player, px, py, grid, bloqueadas, peligro_total, bombs, muros_rompibles, muros_fijos,
                         casillas_bombas, peligro_bombas, peligro_final, peligro_maldicion):
@@ -756,7 +858,7 @@ class CerebroCPU:
 
         # 1. Verificar que la frontera sigue siendo válida
         es_frontera_valida = False
-        for dx, dy, _ in self.DIRECCIONES:
+        for dx, dy, _ in self.direcciones_preferidas:
             nx, ny = tx + dx, ty + dy
             if 0 <= ny < len(grid) and 0 <= nx < len(grid[0]) and (nx, ny) in muros_rompibles:
                 es_frontera_valida = True
@@ -880,6 +982,10 @@ class CerebroCPU:
 
     def pensar(self, player, grid, bombs, players, *args, **kwargs):
         inputs = self.inputs_vacios()
+
+        if getattr(player, "is_ghost", False):
+            return self.pensar_fantasma(player, grid, bombs, players)
+
         contexto = self.capturar_contexto_extra()
 
         px, py = player.get_center_tile()

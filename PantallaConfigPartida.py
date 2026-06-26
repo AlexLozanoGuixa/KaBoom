@@ -3,7 +3,21 @@ import sys
 
 from PantallaMapas import pantalla_mapas
 from PantallaAudio import pantalla_audio
-from PantallaPrincipal import crear_superficie_menu_logica, convertir_mouse_a_logico, presentar_menu_logico
+from PantallaPrincipal import (
+    actualizar_cursor_menu,
+    convertir_mouse_a_logico,
+    crear_superficie_menu_logica,
+    cursor_menu_activo,
+    es_evento_control_arcade,
+    es_evento_joystick_relevante,
+    es_nombre_control_arcade,
+    establecer_ultimo_dispositivo_menu,
+    iniciar_cursor_menu,
+    obtener_ultimo_dispositivo_menu,
+    presentar_menu_logico,
+    registrar_actividad_cursor,
+    registrar_dispositivo_menu_evento,
+)
 from Config import config
 
 BLANCO = (255, 255, 255)
@@ -17,6 +31,7 @@ class ConfiguracionPartida:
         screen = crear_superficie_menu_logica()
         clock = pygame.time.Clock()
         pygame.display.set_caption("Configuración de Partida")
+        iniciar_cursor_menu()
 
         # Valores iniciales desde config
         current_set_index = config.current_set_index
@@ -45,6 +60,9 @@ class ConfiguracionPartida:
         imagen_boton_a = pygame.image.load("Media/Menu/Botones/boton_A.png").convert_alpha()
         imagen_tecla_control = pygame.image.load("Media/Menu/Botones/tecla_control.png").convert_alpha()
         imagen_tecla_enter = pygame.image.load("Media/Menu/Botones/enter.png").convert_alpha()
+        imagen_boton_e = pygame.image.load("Media/Menu/Botones/boton_E.png").convert_alpha()
+        imagen_boton_d = pygame.image.load("Media/Menu/Botones/boton_D.png").convert_alpha()
+        imagen_boton_pause = pygame.image.load("Media/Menu/Botones/pause.png").convert_alpha()
 
         # Redimensionar si es necesario
         imagen_boton_b = pygame.transform.scale(imagen_boton_b, (50, 50))
@@ -53,6 +71,9 @@ class ConfiguracionPartida:
         imagen_tecla_escape = pygame.transform.scale(imagen_tecla_escape, (40, 40))
         imagen_tecla_control = pygame.transform.scale(imagen_tecla_control, (50, 40))
         imagen_tecla_enter = pygame.transform.scale(imagen_tecla_enter, (50, 40))
+        imagen_boton_e = pygame.transform.scale(imagen_boton_e, (50, 50))
+        imagen_boton_d = pygame.transform.scale(imagen_boton_d, (50, 50))
+        imagen_boton_pause = pygame.transform.scale(imagen_boton_pause, (40, 40))
 
         # Tiras
         tira_activa_idx = 0  # Índice de la tira activa
@@ -124,22 +145,22 @@ class ConfiguracionPartida:
         last_input_time = pygame.time.get_ticks()
 
         # Inicializar variable de estado
-        last_input_type = "teclado"  # Por defecto empezamos con teclado
+        last_input_type = obtener_ultimo_dispositivo_menu()
 
         running = True
         while running:
             mouse_pos = convertir_mouse_a_logico(pygame.mouse.get_pos(), display_screen)
 
             for event in pygame.event.get():
+                registrar_actividad_cursor(event)
                 if event.type == pygame.QUIT:
                     pygame.quit()
                     sys.exit()
 
                 # Registra el último tipo de entrada para mostrar las ayudas visuales correctas.
-                if event.type in [pygame.JOYAXISMOTION, pygame.JOYHATMOTION, pygame.JOYBUTTONDOWN]:
-                    last_input_type = "mando"
-                elif event.type in [pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN]:
-                    last_input_type = "teclado"
+                if event.type in [pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN, pygame.MOUSEMOTION,
+                                  pygame.JOYAXISMOTION, pygame.JOYHATMOTION, pygame.JOYBUTTONDOWN]:
+                    last_input_type = registrar_dispositivo_menu_evento(event)
 
                 # Entrada por joystick o cruceta
                 tiempo_actual = pygame.time.get_ticks()
@@ -148,18 +169,22 @@ class ConfiguracionPartida:
 
                     eje_y = joystick.get_axis(1)
                     eje_x = joystick.get_axis(0)
+                    tipo_joystick = "arcade" if es_nombre_control_arcade(joystick.get_name()) else "mando"
 
                     if eje_y < -0.5:  # Joystick arriba
-                        last_input_type = "mando"
+                        last_input_type = tipo_joystick
+                        establecer_ultimo_dispositivo_menu(tipo_joystick)
                         tira_activa_idx = (tira_activa_idx - 1) % len(keys)
                         last_input_time = tiempo_actual
                     elif eje_y > 0.5:  # Joystick abajo
-                        last_input_type = "mando"
+                        last_input_type = tipo_joystick
+                        establecer_ultimo_dispositivo_menu(tipo_joystick)
                         tira_activa_idx = (tira_activa_idx + 1) % len(keys)
                         last_input_time = tiempo_actual
 
                     elif eje_x < -0.5:  # Joystick izquierda
-                        last_input_type = "mando"
+                        last_input_type = tipo_joystick
+                        establecer_ultimo_dispositivo_menu(tipo_joystick)
                         key = keys[tira_activa_idx]
                         if key == "sets" and current_set_index > 0:
                             current_set_index -= 1
@@ -172,7 +197,8 @@ class ConfiguracionPartida:
                         last_input_time = tiempo_actual
 
                     elif eje_x > 0.5:  # Joystick derecha
-                        last_input_type = "mando"
+                        last_input_type = tipo_joystick
+                        establecer_ultimo_dispositivo_menu(tipo_joystick)
                         key = keys[tira_activa_idx]
                         if key == "sets" and current_set_index < len(config.set_options) - 1:
                             current_set_index += 1
@@ -319,18 +345,20 @@ class ConfiguracionPartida:
             bg_anim.draw(display_screen)
             screen.fill((0, 0, 0, 0))
             screen.blit(fondo, fondo_rect)
+            raton_activo = cursor_menu_activo()
 
             # Detectar si el ratón está sobre alguna tira: actualizar tira_activa_idx
-            for idx, key in enumerate(keys):
-                rect = botones[key]["rect"]
-                if rect.collidepoint(mouse_pos):
-                    tira_activa_idx = idx
-                    break
+            if raton_activo:
+                for idx, key in enumerate(keys):
+                    rect = botones[key]["rect"]
+                    if rect.collidepoint(mouse_pos):
+                        tira_activa_idx = idx
+                        break
 
             for key, btn in botones.items():
                 rect = btn["rect"]
                 es_activa = (keys.index(key) == tira_activa_idx)
-                hov = rect.collidepoint(mouse_pos) or es_activa
+                hov = (raton_activo and rect.collidepoint(mouse_pos)) or es_activa
 
                 img = btn["imagen"]
                 if hov:
@@ -377,14 +405,14 @@ class ConfiguracionPartida:
                     right_pos = (flechas_pos[key]["derecha"][0] - shift_amount, flechas_pos[key]["derecha"][1])
                     left_rect = izquierda.get_rect(topleft=left_pos)
                     right_rect = derecha.get_rect(topleft=right_pos)
-                    if left_rect.collidepoint(mouse_pos):
+                    if raton_activo and left_rect.collidepoint(mouse_pos):
                         iz_hover = pygame.transform.scale(izquierda,
                                                           (int(left_rect.width * 1.1), int(left_rect.height * 1.1)))
                         iz_rect_h = iz_hover.get_rect(center=left_rect.center)
                         screen.blit(iz_hover, iz_rect_h)
                     else:
                         screen.blit(izquierda, left_rect)
-                    if right_rect.collidepoint(mouse_pos):
+                    if raton_activo and right_rect.collidepoint(mouse_pos):
                         dr_hover = pygame.transform.scale(derecha,
                                                           (int(right_rect.width * 1.1), int(right_rect.height * 1.1)))
                         dr_rect_h = dr_hover.get_rect(center=right_rect.center)
@@ -394,13 +422,15 @@ class ConfiguracionPartida:
 
             # Botones fijos
             for img, rc in [(atras_rotate, atras_rect), (siguiente, siguiente_rect), (audio, audio_rect)]:
-                if rc.collidepoint(mouse_pos):
+                if raton_activo and rc.collidepoint(mouse_pos):
                     screen.blit(pygame.transform.scale(img, (int(rc.width * 1.1), int(rc.height * 1.1))), rc)
                 else:
                     screen.blit(img, rc)
 
             # Ayudas visuales del control activo.
-            if last_input_type == "mando":
+            if last_input_type == "arcade":
+                imagen = imagen_boton_e
+            elif last_input_type == "mando":
                 imagen = imagen_boton_b
             else:
                 imagen = imagen_tecla_escape
@@ -409,7 +439,9 @@ class ConfiguracionPartida:
             pos_y = atras_rect.centery - imagen.get_height() // 2
             screen.blit(imagen, (pos_x, pos_y))
 
-            if last_input_type == "mando":
+            if last_input_type == "arcade":
+                imagen = imagen_boton_d
+            elif last_input_type == "mando":
                 imagen = imagen_boton_a
             else:
                 imagen = imagen_tecla_enter
@@ -418,7 +450,9 @@ class ConfiguracionPartida:
             pos_y = siguiente_rect.centery - imagen.get_height() // 2
             screen.blit(imagen, (pos_x, pos_y))
 
-            if last_input_type == "mando":
+            if last_input_type == "arcade":
+                imagen = imagen_boton_pause
+            elif last_input_type == "mando":
                 imagen = imagen_boton_options
             else:
                 imagen = imagen_tecla_control
@@ -434,6 +468,7 @@ class ConfiguracionPartida:
             screen.blit(title_surf, title_rect)
 
             presentar_menu_logico(display_screen, screen)
+            actualizar_cursor_menu()
             pygame.display.flip()
             clock.tick(60)
 
@@ -499,6 +534,7 @@ def confirmar_salida(screen, bg_anim, fondo_anterior):
         hover_no = no_rect.collidepoint(mouse_pos)
 
         for event in pygame.event.get():
+            registrar_actividad_cursor(event)
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
@@ -579,5 +615,6 @@ def confirmar_salida(screen, bg_anim, fondo_anterior):
             label_rect = label.get_rect(center=rect.center)
             screen.blit(label, label_rect)
 
+        actualizar_cursor_menu()
         pygame.display.flip()
         clock.tick(60)

@@ -1,8 +1,22 @@
 import pygame
 import sys
+from PantallaPrincipal import actualizar_cursor_menu, iniciar_cursor_menu, registrar_actividad_cursor
 
 
-def pantalla_controles(screen, fondo_pausa):
+def normalizar_dispositivo_inicial(dispositivo_inicial):
+    if dispositivo_inicial in ("mando", "gamepad"):
+        return 1
+    if dispositivo_inicial in ("panel", "arcade"):
+        return 2
+    return 0
+
+
+def normalizar_tipo_controles_inicial(tipo_controles_inicial):
+    return 1 if tipo_controles_inicial == "combate" else 0
+
+
+def pantalla_controles(screen, fondo_pausa, dispositivo_inicial="teclado", tipo_controles_inicial="combate"):
+    iniciar_cursor_menu()
     clock = pygame.time.Clock()
     font = pygame.font.SysFont(None, 40)
     font_opciones = pygame.font.SysFont(None, 28)
@@ -40,10 +54,13 @@ def pantalla_controles(screen, fondo_pausa):
         img_teclado_combate = pygame.image.load(ruta_base_controles + "tecladocombate.png").convert_alpha()
         img_mando_menu = pygame.image.load(ruta_base_controles + "mandomenus.png").convert_alpha()
         img_mando_combate = pygame.image.load(ruta_base_controles + "mandocombate.png").convert_alpha()
+        img_panel_menu = pygame.image.load(ruta_base_controles + "panelmenus.png").convert_alpha()
+        img_panel_combate = pygame.image.load(ruta_base_controles + "panelcombate.png").convert_alpha()
     except pygame.error as e:
         print(f"Error al cargar una o más imágenes de controles: {e}")
-        img_teclado_menu, img_teclado_combate, img_mando_menu, img_mando_combate = [pygame.Surface((1, 1)) for _ in
-                                                                                    range(4)]
+        img_teclado_menu, img_teclado_combate, img_mando_menu, img_mando_combate, img_panel_menu, img_panel_combate = [
+            pygame.Surface((1, 1)) for _ in range(6)
+        ]
 
     try:
         fondo_controles_img = pygame.transform.scale(
@@ -55,11 +72,11 @@ def pantalla_controles(screen, fondo_pausa):
         fondo_controles_img = None
 
     # --- VARIABLES DE ESTADO PARA EL MENÚ INTERNO ---
-    opciones_fila1 = ["Configuración de teclado", "Configuración de mando"]
-    indice_fila1 = 0
+    opciones_fila1 = ["Configuración de teclado", "Configuración de mando", "Configuración de panel"]
+    indice_fila1 = normalizar_dispositivo_inicial(dispositivo_inicial)
 
     opciones_fila2 = ["Controles Menú", "Controles Combate"]
-    indice_fila2 = 0
+    indice_fila2 = normalizar_tipo_controles_inicial(tipo_controles_inicial)
 
     fila_activa = 0
 
@@ -102,6 +119,7 @@ def pantalla_controles(screen, fondo_pausa):
         joystick_timer += dt
 
         for event in pygame.event.get():
+            registrar_actividad_cursor(event)
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
@@ -237,19 +255,12 @@ def pantalla_controles(screen, fondo_pausa):
                              (rect_seleccion_x, rect_seleccion_y, rect_seleccion_w, rect_seleccion_h), 3,
                              border_radius=8)
 
-        imagen_a_mostrar = None
-        # Si la opción es "Teclado"
-        if indice_fila1 == 0:
-            if indice_fila2 == 0:  # y la opción es "Menú"
-                imagen_a_mostrar = img_teclado_menu
-            else:  # y la opción es "Combate"
-                imagen_a_mostrar = img_teclado_combate
-        # Si la opción es "Mando"
-        else:
-            if indice_fila2 == 0:  # y la opción es "Menú"
-                imagen_a_mostrar = img_mando_menu
-            else:  # y la opción es "Combate"
-                imagen_a_mostrar = img_mando_combate
+        imagenes_controles = (
+            (img_teclado_menu, img_teclado_combate),
+            (img_mando_menu, img_mando_combate),
+            (img_panel_menu, img_panel_combate),
+        )
+        imagen_a_mostrar = imagenes_controles[indice_fila1][indice_fila2]
 
         if imagen_a_mostrar:
             # Escala la imagen para que encaje bien en el centro
@@ -268,6 +279,7 @@ def pantalla_controles(screen, fondo_pausa):
 
         screen.blit(flecha_img, flecha_rect)
 
+        actualizar_cursor_menu()
         pygame.display.flip()
 
     return

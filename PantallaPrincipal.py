@@ -3,6 +3,25 @@ import sys
 import math
 
 MENU_LOGICAL_SIZE = (800, 600)
+CURSOR_MENU_INACTIVITY_MS = 1800
+_CURSOR_MOUSE_EVENTS = (pygame.MOUSEMOTION, pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEWHEEL)
+_CURSOR_NON_MOUSE_EVENTS = (
+    pygame.KEYDOWN,
+    pygame.JOYBUTTONDOWN,
+    pygame.JOYAXISMOTION,
+    pygame.JOYHATMOTION,
+    pygame.JOYDEVICEADDED,
+    pygame.JOYDEVICEREMOVED,
+)
+_WINDOW_INACTIVE_EVENTS = (pygame.WINDOWFOCUSLOST, pygame.WINDOWMINIMIZED)
+_WINDOW_ACTIVE_EVENTS = (pygame.WINDOWFOCUSGAINED, pygame.WINDOWRESTORED, pygame.WINDOWSHOWN)
+_JOYSTICK_INPUT_EVENTS = (pygame.JOYBUTTONDOWN, pygame.JOYAXISMOTION, pygame.JOYHATMOTION)
+_NOMBRES_CONTROL_ARCADE = {
+    "controlador jugador 1",
+    "controlador jugador 2",
+}
+_ultima_actividad_cursor = 0
+_ultimo_dispositivo_menu = "teclado"
 
 
 # --- Clase para el fondo animado ---
@@ -95,6 +114,138 @@ def presentar_menu_logico(display_screen, logical_surface):
         display_screen.blit(frame, (0, 0))
 
 
+def iniciar_cursor_menu():
+    """Prepara los menus para empezar con el cursor oculto hasta que se use el raton."""
+    global _ultima_actividad_cursor
+    _ultima_actividad_cursor = 0
+    pygame.mouse.set_visible(False)
+
+
+def cursor_menu_activo():
+    return pygame.mouse.get_visible()
+
+
+def obtener_nombre_joystick_evento(event):
+    instance_id = getattr(event, "instance_id", None)
+    for indice in range(pygame.joystick.get_count()):
+        try:
+            joystick = pygame.joystick.Joystick(indice)
+            if not joystick.get_init():
+                joystick.init()
+            if instance_id is not None and joystick.get_instance_id() == instance_id:
+                return joystick.get_name()
+        except pygame.error:
+            continue
+
+    joy_index = getattr(event, "joy", None)
+    if joy_index is not None:
+        try:
+            joystick = pygame.joystick.Joystick(joy_index)
+            if not joystick.get_init():
+                joystick.init()
+            return joystick.get_name()
+        except pygame.error:
+            return ""
+    return ""
+
+
+def es_evento_joystick_relevante(event, umbral=0.35):
+    if event.type == pygame.JOYAXISMOTION:
+        return abs(getattr(event, "value", 0.0)) >= umbral
+    if event.type == pygame.JOYHATMOTION:
+        return getattr(event, "value", (0, 0)) != (0, 0)
+    return event.type == pygame.JOYBUTTONDOWN
+
+
+def es_nombre_control_arcade(nombre):
+    return nombre.strip().lower() in _NOMBRES_CONTROL_ARCADE
+
+
+def es_evento_control_arcade(event):
+    if event.type not in _JOYSTICK_INPUT_EVENTS or not es_evento_joystick_relevante(event):
+        return False
+    return es_nombre_control_arcade(obtener_nombre_joystick_evento(event))
+
+
+def establecer_ultimo_dispositivo_menu(tipo_dispositivo):
+    global _ultimo_dispositivo_menu
+    if tipo_dispositivo in ("teclado", "mando", "arcade"):
+        _ultimo_dispositivo_menu = tipo_dispositivo
+
+
+def obtener_ultimo_dispositivo_menu():
+    return _ultimo_dispositivo_menu
+
+
+def tipo_joystick_menu(joystick):
+    return "arcade" if es_nombre_control_arcade(joystick.get_name()) else "mando"
+
+
+def registrar_dispositivo_menu_evento(event):
+    if event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN, pygame.MOUSEMOTION):
+        establecer_ultimo_dispositivo_menu("teclado")
+    elif event.type in _JOYSTICK_INPUT_EVENTS and es_evento_joystick_relevante(event):
+        establecer_ultimo_dispositivo_menu("arcade" if es_evento_control_arcade(event) else "mando")
+    return obtener_ultimo_dispositivo_menu()
+
+
+def evento_ventana_inactiva(event):
+    return event.type in _WINDOW_INACTIVE_EVENTS
+
+
+def congelar_menu_si_pierde_foco(event):
+    if event.type not in _WINDOW_INACTIVE_EVENTS:
+        return False
+
+    mixer_activo = pygame.mixer.get_init() is not None
+    musica_activa = mixer_activo and pygame.mixer.music.get_busy()
+    canales_activos = mixer_activo and pygame.mixer.get_busy()
+    if mixer_activo:
+        if musica_activa:
+            pygame.mixer.music.pause()
+        pygame.mixer.pause()
+    pygame.mouse.set_visible(False)
+
+    while True:
+        evento_espera = pygame.event.wait()
+        if evento_espera.type == pygame.QUIT:
+            pygame.quit()
+            sys.exit()
+        if evento_espera.type in _WINDOW_ACTIVE_EVENTS:
+            if mixer_activo and musica_activa:
+                pygame.mixer.music.unpause()
+            if mixer_activo and canales_activos:
+                pygame.mixer.unpause()
+            return True
+
+
+def registrar_actividad_cursor(event):
+    """Muestra el cursor solo cuando hay entrada real de raton."""
+    global _ultima_actividad_cursor
+    if congelar_menu_si_pierde_foco(event):
+        _ultima_actividad_cursor = 0
+        return
+    if event.type in _CURSOR_MOUSE_EVENTS:
+        _ultima_actividad_cursor = pygame.time.get_ticks()
+        pygame.mouse.set_visible(True)
+    elif event.type in _CURSOR_NON_MOUSE_EVENTS:
+        _ultima_actividad_cursor = 0
+        pygame.mouse.set_visible(False)
+
+
+def actualizar_cursor_menu():
+    """Oculta de nuevo el cursor si el raton lleva un tiempo sin utilizarse."""
+    if _ultima_actividad_cursor and pygame.time.get_ticks() - _ultima_actividad_cursor >= CURSOR_MENU_INACTIVITY_MS:
+        pygame.mouse.set_visible(False)
+
+
+def ocultar_cursor_partida():
+    """Garantiza que el cursor no aparezca durante la partida activa."""
+    global _ultima_actividad_cursor
+    _ultima_actividad_cursor = 0
+    pygame.mouse.set_visible(False)
+
+
 def draw_bombeo_texto(screen, center, font, message):
     tiempo = pygame.time.get_ticks() / 300.0
     factor = 1 + 0.05 * math.sin(tiempo)
@@ -138,6 +289,7 @@ def background_screen(screen):
     pygame.init()
     if screen is None:
         screen = crear_pantalla_completa()
+    iniciar_cursor_menu()
     screen_width, screen_height = screen.get_size()
     pygame.display.set_caption("Pantalla de Inicio - Fondo Animado")
     clock = pygame.time.Clock()
@@ -148,7 +300,7 @@ def background_screen(screen):
         mando.init()
 
     font = pygame.font.SysFont(None, 30)
-    message = "Pulsa cualquier tecla o botón del mando para continuar"
+    message = "PULSA CUALQUIER TECLA O BOTÓN PARA CONTINUAR"
     text_center = (screen_width // 2, screen_height - 100)
 
     key_sound = pygame.mixer.Sound("Media/Sonidos_juego/Botones/boton_inicio.mp3")
@@ -165,15 +317,18 @@ def background_screen(screen):
         progreso = min(tiempo_transcurrido / 1.5, 1)
 
         for event in pygame.event.get():
+            registrar_actividad_cursor(event)
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
 
             if (event.type == pygame.KEYDOWN or event.type == pygame.MOUSEBUTTONDOWN) and progreso >= 1:
+                registrar_dispositivo_menu_evento(event)
                 key_sound.play()
                 running = False
 
             if event.type == pygame.JOYBUTTONDOWN and progreso >= 1:
+                registrar_dispositivo_menu_evento(event)
                 key_sound.play()
                 running = False
 
@@ -199,6 +354,7 @@ def background_screen(screen):
         if progreso >= 1:
             draw_bombeo_texto(screen, text_center, font, message)
 
+        actualizar_cursor_menu()
         pygame.display.flip()
         clock.tick(60)
 

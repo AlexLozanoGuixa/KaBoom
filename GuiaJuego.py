@@ -1,10 +1,12 @@
 import pygame
 import sys
+from PantallaPrincipal import actualizar_cursor_menu, iniciar_cursor_menu, registrar_actividad_cursor
 
 def pantalla_guia(screen):
     """
     Muestra la pantalla de guía del juego y vuelve al menú de pausa al salir.
     """
+    iniciar_cursor_menu()
     clock = pygame.time.Clock()
     font = pygame.font.SysFont(None, 40)
 
@@ -14,6 +16,7 @@ def pantalla_guia(screen):
     running = True
     while running:
         for event in pygame.event.get():
+            registrar_actividad_cursor(event)
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
@@ -31,6 +34,7 @@ def pantalla_guia(screen):
         # PINTAR TEXTO
         screen.blit(texto, texto_rect)
 
+        actualizar_cursor_menu()
         pygame.display.flip()
         clock.tick(60)
 
