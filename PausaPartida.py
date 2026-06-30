@@ -33,6 +33,44 @@ JOYSTICK_COOLDOWN = 200  # milisegundos
 last_joystick_move_time = 0  # Último movimiento registrado del joystick.
 
 
+def obtener_instance_id_evento(event):
+    return getattr(event, "instance_id", getattr(event, "joy", None))
+
+
+def evento_pertenece_solicitante(event, solicitante):
+    """Acepta exclusivamente entradas del dispositivo que solicitó la pausa."""
+    dispositivo = solicitante["dispositivo"]
+    if dispositivo == "teclado":
+        return event.type in (
+            pygame.KEYDOWN,
+            pygame.KEYUP,
+            pygame.MOUSEMOTION,
+            pygame.MOUSEBUTTONDOWN,
+            pygame.MOUSEBUTTONUP,
+            pygame.MOUSEWHEEL,
+        )
+    return (
+        event.type in (pygame.JOYBUTTONDOWN, pygame.JOYAXISMOTION, pygame.JOYHATMOTION)
+        and obtener_instance_id_evento(event) == dispositivo
+    )
+
+
+def obtener_joystick_solicitante(solicitante):
+    dispositivo = solicitante["dispositivo"]
+    if dispositivo == "teclado":
+        return None
+    for indice in range(pygame.joystick.get_count()):
+        try:
+            joystick = pygame.joystick.Joystick(indice)
+            if not joystick.get_init():
+                joystick.init()
+            if joystick.get_instance_id() == dispositivo:
+                return joystick
+        except pygame.error:
+            continue
+    return None
+
+
 class SliderRect:
     def __init__(self, x, y, width, height, initial=1.0, tipo_volumen="GENERAL"):
         self.rect = pygame.Rect(x, y, width, height)
@@ -126,18 +164,26 @@ def tipo_joystick_activo(joystick):
     return "arcade" if es_nombre_control_arcade(joystick.get_name()) else "gamepad"
 
 
-def dibujar_ui(screen, bg_anim, fondo_gris, rect_fondo_gris, sliders):
+def dibujar_ui(screen, fondo_gris, rect_fondo_gris, sliders, solicitante):
     global hover_casillas, casillas_rects, last_input_method, ultimo_hover_index
     from Config import audio
 
     font_titulo = pygame.font.SysFont(None, 30)
     font_opciones = pygame.font.SysFont(None, 20)
 
+    if solicitante.get("automatica"):
+        mensaje_pausa = f"Pausa automática asignada al Jugador {solicitante['jugador']}."
+    else:
+        mensaje_pausa = f"Jugador {solicitante['jugador']} ha solicitado la pausa."
+    mensaje_surf = font_opciones.render(mensaje_pausa, True, NEGRO)
+    mensaje_rect = mensaje_surf.get_rect(center=(rect_fondo_gris.centerx, rect_fondo_gris.top + 20))
+
     titulo_surf = font_titulo.render("AJUSTES DE JUEGO", True, NEGRO)
-    titulo_rect = titulo_surf.get_rect(center=(rect_fondo_gris.centerx, rect_fondo_gris.top + 30))
+    titulo_rect = titulo_surf.get_rect(center=(rect_fondo_gris.centerx, rect_fondo_gris.top + 48))
 
     pygame.draw.rect(screen, GRIS_MEDIO, rect_fondo_gris, border_radius=10)
     pygame.draw.rect(screen, GRIS_OSCURO, rect_fondo_gris, width=4, border_radius=10)
+    screen.blit(mensaje_surf, mensaje_rect)
     screen.blit(titulo_surf, titulo_rect)
 
     # Casilla para reanudar la partida.
@@ -240,19 +286,22 @@ def dibujar_ui(screen, bg_anim, fondo_gris, rect_fondo_gris, sliders):
 
 
 
-def manejar_eventos(sliders, screen, bg_anim):
+def manejar_eventos(sliders, screen, solicitante):
     global selected_element_index, casillas_rects, last_input_method
     if 'casillas_rects' not in globals() or not casillas_rects:
         return
 
-    mouse_pos = pygame.mouse.get_pos()
-    mouse_click = pygame.mouse.get_pressed()[0]
+    permite_raton = solicitante["dispositivo"] == "teclado"
+    mouse_pos = pygame.mouse.get_pos() if permite_raton else (-1, -1)
+    mouse_click = permite_raton and pygame.mouse.get_pressed()[0]
 
     for event in pygame.event.get():
-        registrar_actividad_cursor(event)
         if event.type == pygame.QUIT:
             pygame.quit()
             sys.exit()
+        if not evento_pertenece_solicitante(event, solicitante):
+            continue
+        registrar_actividad_cursor(event)
 
         if event.type == pygame.MOUSEMOTION:
             cambiar_a_raton()
@@ -281,15 +330,15 @@ def manejar_eventos(sliders, screen, bg_anim):
                         from GuiaJuego import pantalla_guia
                         guardar_volumenes(sliders)
                         fondo_pausa = screen.copy()  # Guardar el fondo antes de cambiar de pantalla
-                        pantalla_guia(screen)
+                        pantalla_guia(screen, solicitante, fondo_pausa)
                         screen.blit(fondo_pausa, (0, 0))  # Restaurar el fondo
                     elif i == 4:
                         guardar_volumenes(sliders)
-                        confirmar_salida(screen, bg_anim, fondo_anterior=screen.copy())
+                        confirmar_salida(screen, solicitante, fondo_anterior=screen.copy())
 
         if event.type == pygame.KEYDOWN:
             cambiar_a_teclado()
-            if event.key == pygame.K_ESCAPE:
+            if event.key in (pygame.K_ESCAPE, pygame.K_LCTRL, pygame.K_RCTRL):
                 guardar_volumenes(sliders)
                 return "ATRAS"
             elif event.key == pygame.K_DOWN:
@@ -320,11 +369,11 @@ def manejar_eventos(sliders, screen, bg_anim):
                     from GuiaJuego import pantalla_guia
                     guardar_volumenes(sliders)
                     fondo_pausa = screen.copy()  # Guardar el fondo antes de cambiar de pantalla
-                    pantalla_guia(screen)
+                    pantalla_guia(screen, solicitante, fondo_pausa)
                     screen.blit(fondo_pausa, (0, 0))  # Restaurar el fondo
                 elif selected_element_index == 4:
                     guardar_volumenes(sliders)
-                    confirmar_salida(screen, bg_anim, fondo_anterior=screen.copy())
+                    confirmar_salida(screen, solicitante, fondo_anterior=screen.copy())
 
         if event.type == pygame.JOYBUTTONDOWN:
             registrar_entrada_joystick(event)
@@ -347,68 +396,61 @@ def manejar_eventos(sliders, screen, bg_anim):
                     from GuiaJuego import pantalla_guia
                     guardar_volumenes(sliders)
                     fondo_pausa = screen.copy()  # Guardar el fondo antes de cambiar de pantalla
-                    pantalla_guia(screen)
+                    pantalla_guia(screen, solicitante, fondo_pausa)
                     screen.blit(fondo_pausa, (0, 0))  # Restaurar el fondo
                 elif selected_element_index == 4:
                     guardar_volumenes(sliders)
-                    confirmar_salida(screen, bg_anim, fondo_anterior=screen.copy())
+                    confirmar_salida(screen, solicitante, fondo_anterior=screen.copy())
             elif event.button in (7, 9):
                 guardar_volumenes(sliders)
                 return "ATRAS"
 
-    # Movimiento con HAT del mando
-    joys = [pygame.joystick.Joystick(i) for i in range(pygame.joystick.get_count())]
-    if joys:
-        joy = joys[0]
-        hat_x, hat_y = joy.get_hat(0)
-
-        global tiempo_ultimo_movimiento
+    joystick = obtener_joystick_solicitante(solicitante)
+    if joystick is not None:
+        global tiempo_ultimo_movimiento, last_joystick_move_time
         current_time = pygame.time.get_ticks()
-        delay = 200
 
-        if current_time - tiempo_ultimo_movimiento > delay:
-            if hat_y == -1:
-                last_input_method = tipo_joystick_activo(joy)
-                selected_element_index = min(selected_element_index + 1, len(casillas_rects) - 1)
-                tiempo_ultimo_movimiento = current_time
-            elif hat_y == 1:
-                last_input_method = tipo_joystick_activo(joy)
-                selected_element_index = max(selected_element_index - 1, 0)
-                tiempo_ultimo_movimiento = current_time
-            elif hat_x == -1:
-                last_input_method = tipo_joystick_activo(joy)
+        if joystick.get_numhats() > 0:
+            hat_x, hat_y = joystick.get_hat(0)
+            if current_time - tiempo_ultimo_movimiento > 200:
+                if hat_y == -1:
+                    last_input_method = tipo_joystick_activo(joystick)
+                    selected_element_index = min(selected_element_index + 1, len(casillas_rects) - 1)
+                    tiempo_ultimo_movimiento = current_time
+                elif hat_y == 1:
+                    last_input_method = tipo_joystick_activo(joystick)
+                    selected_element_index = max(selected_element_index - 1, 0)
+                    tiempo_ultimo_movimiento = current_time
+                elif hat_x == -1:
+                    last_input_method = tipo_joystick_activo(joystick)
+                    if selected_element_index == 1:
+                        sliders[0].value = max(0.0, sliders[0].value - 0.01)
+                    tiempo_ultimo_movimiento = current_time
+                elif hat_x == 1:
+                    last_input_method = tipo_joystick_activo(joystick)
+                    if selected_element_index == 1:
+                        sliders[0].value = min(1.0, sliders[0].value + 0.01)
+                    tiempo_ultimo_movimiento = current_time
+
+        if joystick.get_numaxes() > 1:
+            y_axis = joystick.get_axis(1)
+            if abs(y_axis) > 0.5 and current_time - last_joystick_move_time > JOYSTICK_COOLDOWN:
+                last_input_method = tipo_joystick_activo(joystick)
+                if y_axis > 0.5:
+                    selected_element_index = (selected_element_index + 1) % len(casillas_rects)
+                elif y_axis < -0.5:
+                    selected_element_index = (selected_element_index - 1) % len(casillas_rects)
+                last_joystick_move_time = current_time
+
+            x_axis = joystick.get_axis(0)
+            if abs(x_axis) > 0.5 and current_time - last_joystick_move_time > JOYSTICK_COOLDOWN:
+                last_input_method = tipo_joystick_activo(joystick)
                 if selected_element_index == 1:
-                    sliders[0].value = max(0.0, sliders[0].value - 0.01)
-                tiempo_ultimo_movimiento = current_time
-            elif hat_x == 1:
-                last_input_method = tipo_joystick_activo(joy)
-                if selected_element_index == 1:
-                    sliders[0].value = min(1.0, sliders[0].value + 0.01)
-                tiempo_ultimo_movimiento = current_time
-
-    global last_joystick_move_time
-    current_time = pygame.time.get_ticks()
-    for i in range(pygame.joystick.get_count()):
-        joystick = pygame.joystick.Joystick(i)
-        joystick.init()
-        y_axis = joystick.get_axis(1)
-        if abs(y_axis) > 0.5 and current_time - last_joystick_move_time > JOYSTICK_COOLDOWN:
-            last_input_method = tipo_joystick_activo(joystick)
-            if y_axis > 0.5:
-                selected_element_index = (selected_element_index + 1) % len(casillas_rects)
-            elif y_axis < -0.5:
-                selected_element_index = (selected_element_index - 1) % len(casillas_rects)
-            last_joystick_move_time = current_time
-
-        x_axis = joystick.get_axis(0)
-        if abs(x_axis) > 0.5 and current_time - last_joystick_move_time > JOYSTICK_COOLDOWN:
-            last_input_method = tipo_joystick_activo(joystick)
-            if selected_element_index == 1:
-                if x_axis > 0.5:
-                    sliders[0].value = min(1.0, sliders[0].value + 0.01)
-                elif x_axis < -0.5:
-                    sliders[0].value = max(0.0, sliders[0].value - 0.01)
-            last_joystick_move_time = current_time
+                    if x_axis > 0.5:
+                        sliders[0].value = min(1.0, sliders[0].value + 0.01)
+                    elif x_axis < -0.5:
+                        sliders[0].value = max(0.0, sliders[0].value - 0.01)
+                last_joystick_move_time = current_time
 
     for slider in sliders:
         slider.update(mouse_pos, mouse_click)
@@ -434,24 +476,19 @@ def guardar_volumenes(sliders):
 
 
 
-def menu_pausa(screen, bg_anim, fondo_pausa):
+def menu_pausa(screen, solicitante, fondo_pausa):
     global selected_element_index, last_input_method, hover_casillas, ultimo_hover_index
+    global tiempo_ultimo_movimiento, last_joystick_move_time
     selected_element_index = 0
-    last_input_method = "keyboard"
+    last_input_method = solicitante.get("metodo", "keyboard")
     hover_casillas = [False] * 5
     ultimo_hover_index = 0
+    tiempo_ultimo_movimiento = 0
+    last_joystick_move_time = 0
 
     iniciar_cursor_menu()
     pygame.display.set_caption("KaBoom - Pausa")
     clock = pygame.time.Clock()
-
-    if not hasattr(bg_anim, 'update') or not hasattr(bg_anim, 'draw'):
-        class DummyBG:
-            def update(self): pass
-
-            def draw(self, s): pass
-
-        bg_anim = DummyBG()
 
     pygame.joystick.init()
     mandos = [pygame.joystick.Joystick(i) for i in range(pygame.joystick.get_count())]
@@ -463,12 +500,12 @@ def menu_pausa(screen, bg_anim, fondo_pausa):
 
     # Estado inicial de navegación por teclado.
     selected_element_index = 0
-    last_input_method = "keyboard"
+    last_input_method = solicitante.get("metodo", "keyboard")
     hover_casillas = [False] * 5
 
     while True:
         pygame.mixer.pause()
-        resultado = manejar_eventos(sliders, screen, bg_anim)
+        resultado = manejar_eventos(sliders, screen, solicitante)
         if resultado == "ATRAS":
             return
 
@@ -476,22 +513,23 @@ def menu_pausa(screen, bg_anim, fondo_pausa):
         overlay = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 85))
         screen.blit(overlay, (0, 0))
-        dibujar_ui(screen, bg_anim, fondo_gris, rect_fondo_gris, sliders)
+        dibujar_ui(screen, fondo_gris, rect_fondo_gris, sliders, solicitante)
         actualizar_cursor_menu()
         pygame.display.flip()
         clock.tick(60)
 
 
 # CONFIRMAR CIERRE DEL JUEGO
-def confirmar_salida(screen, bg_anim, fondo_anterior):
+def confirmar_salida(screen, solicitante, fondo_anterior):
     global last_input_method
     clock = pygame.time.Clock()
     seleccion = 0  # 0 = SI, 1 = NO
     font = pygame.font.SysFont(None, 30)
     running = True
+    permite_raton = solicitante["dispositivo"] == "teclado"
 
     while running:
-        mouse_pos = pygame.mouse.get_pos()
+        mouse_pos = pygame.mouse.get_pos() if permite_raton else (-1, -1)
 
         # Restaurar el fondo anterior
         screen.blit(fondo_anterior, (0, 0))
@@ -540,12 +578,14 @@ def confirmar_salida(screen, bg_anim, fondo_anterior):
         hover_no = no_rect.collidepoint(mouse_pos)
 
         for event in pygame.event.get():
-            registrar_actividad_cursor(event)
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
+            if not evento_pertenece_solicitante(event, solicitante):
+                continue
+            registrar_actividad_cursor(event)
 
-            elif event.type == pygame.MOUSEMOTION:
+            if event.type == pygame.MOUSEMOTION:
                 last_input_method = "mouse"
                 if hover_si:
                     seleccion = 0

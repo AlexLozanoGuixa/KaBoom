@@ -127,6 +127,25 @@ class ConfiguracionPartida:
         font = pygame.font.SysFont(None, 23)
         shift_amount = 10
 
+        def puede_disminuir(key):
+            if key == "sets":
+                return current_set_index > 0
+            if key == "minutos":
+                return current_minute > 2
+            if key == "pos_inicial":
+                return current_position_index > 0
+            return key in current_ultimas_index and current_ultimas_index[key] > 0
+
+        def puede_aumentar(key):
+            if key == "sets":
+                return current_set_index < len(config.set_options) - 1
+            if key == "minutos":
+                return current_minute < 9
+            if key == "pos_inicial":
+                return current_position_index < len(config.position_options) - 1
+            return (key in current_ultimas_index
+                    and current_ultimas_index[key] < len(config.ultimas_opciones) - 1)
+
         def ir_a_pantalla_mapas():
             config.current_set_index = current_set_index
             config.current_minute = current_minute
@@ -272,9 +291,15 @@ class ConfiguracionPartida:
 
                     for key, btn in botones.items():
                         if btn["rect"].collidepoint(mouse_pos):
-                            la = izquierda.get_rect(topleft=flechas_pos[key]["izquierda"])
-                            ra = derecha.get_rect(topleft=flechas_pos[key]["derecha"])
-                            if la.collidepoint(mouse_pos):
+                            la = izquierda.get_rect(topleft=(
+                                flechas_pos[key]["izquierda"][0] - shift_amount,
+                                flechas_pos[key]["izquierda"][1],
+                            ))
+                            ra = derecha.get_rect(topleft=(
+                                flechas_pos[key]["derecha"][0] - shift_amount,
+                                flechas_pos[key]["derecha"][1],
+                            ))
+                            if puede_disminuir(key) and la.collidepoint(mouse_pos):
                                 if key == "sets" and current_set_index > 0:
                                     current_set_index -= 1
                                 elif key == "minutos" and current_minute > 2:
@@ -283,7 +308,7 @@ class ConfiguracionPartida:
                                     current_position_index -= 1
                                 elif key in current_ultimas_index and current_ultimas_index[key] > 0:
                                     current_ultimas_index[key] -= 1
-                            elif ra.collidepoint(mouse_pos):
+                            elif puede_aumentar(key) and ra.collidepoint(mouse_pos):
                                 if key == "sets" and current_set_index < len(config.set_options) - 1:
                                     current_set_index += 1
                                 elif key == "minutos" and current_minute < 9:
@@ -405,20 +430,24 @@ class ConfiguracionPartida:
                     right_pos = (flechas_pos[key]["derecha"][0] - shift_amount, flechas_pos[key]["derecha"][1])
                     left_rect = izquierda.get_rect(topleft=left_pos)
                     right_rect = derecha.get_rect(topleft=right_pos)
-                    if raton_activo and left_rect.collidepoint(mouse_pos):
-                        iz_hover = pygame.transform.scale(izquierda,
-                                                          (int(left_rect.width * 1.1), int(left_rect.height * 1.1)))
-                        iz_rect_h = iz_hover.get_rect(center=left_rect.center)
-                        screen.blit(iz_hover, iz_rect_h)
-                    else:
-                        screen.blit(izquierda, left_rect)
-                    if raton_activo and right_rect.collidepoint(mouse_pos):
-                        dr_hover = pygame.transform.scale(derecha,
-                                                          (int(right_rect.width * 1.1), int(right_rect.height * 1.1)))
-                        dr_rect_h = dr_hover.get_rect(center=right_rect.center)
-                        screen.blit(dr_hover, dr_rect_h)
-                    else:
-                        screen.blit(derecha, right_rect)
+                    if puede_disminuir(key):
+                        if raton_activo and left_rect.collidepoint(mouse_pos):
+                            iz_hover = pygame.transform.scale(
+                                izquierda, (int(left_rect.width * 1.1), int(left_rect.height * 1.1))
+                            )
+                            iz_rect_h = iz_hover.get_rect(center=left_rect.center)
+                            screen.blit(iz_hover, iz_rect_h)
+                        else:
+                            screen.blit(izquierda, left_rect)
+                    if puede_aumentar(key):
+                        if raton_activo and right_rect.collidepoint(mouse_pos):
+                            dr_hover = pygame.transform.scale(
+                                derecha, (int(right_rect.width * 1.1), int(right_rect.height * 1.1))
+                            )
+                            dr_rect_h = dr_hover.get_rect(center=right_rect.center)
+                            screen.blit(dr_hover, dr_rect_h)
+                        else:
+                            screen.blit(derecha, right_rect)
 
             # Botones fijos
             for img, rc in [(atras_rotate, atras_rect), (siguiente, siguiente_rect), (audio, audio_rect)]:

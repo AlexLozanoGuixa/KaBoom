@@ -34,7 +34,7 @@ def pantalla_mapas(screen, bg_anim):
 
     # Cooldown para evitar repeticiones continuas al navegar con mando.
     mando_delay = 200
-    last_input_time = pygame.time.get_ticks()
+    last_input_time = pygame.time.get_ticks() - mando_delay
 
     # BOTON ATRAS
     atras = pygame.transform.scale(pygame.image.load("Media/Menu/Botones/siguiente.png"), (40, 40))
@@ -107,8 +107,11 @@ def pantalla_mapas(screen, bg_anim):
 
     # Ajustar sensibilidad del eje del mando
     axis_ready = True
-    THRESHOLD = 0.6  # Cuándo actúa el eje
-    DEADZONE = 0.3  # Cuándo se rearma
+    THRESHOLD = 0.5
+    DEADZONE = 0.2
+    AXIS_REARM_DELAY = 120
+    axis_last_value = 0.0
+    axis_centered_since = None
 
     last_input_type = obtener_ultimo_dispositivo_menu()
 
@@ -135,24 +138,35 @@ def pantalla_mapas(screen, bg_anim):
 
             elif event.type == pygame.JOYHATMOTION and event.hat == 0:
                 _, hat_y = event.value  # D-pad vertical para cambiar de fase.
-                if hat_y == -1:
-                    selected_index = (selected_index + 1) % len(mapas)
-                elif hat_y == 1:
-                    selected_index = (selected_index - 1) % len(mapas)
-                config.selected_map = selected_index + 1
+                tiempo_actual = pygame.time.get_ticks()
+                if tiempo_actual - last_input_time >= mando_delay:
+                    if hat_y == -1:
+                        selected_index = (selected_index + 1) % len(mapas)
+                        last_input_time = tiempo_actual
+                    elif hat_y == 1:
+                        selected_index = (selected_index - 1) % len(mapas)
+                        last_input_time = tiempo_actual
+                    config.selected_map = selected_index + 1
 
             # Solo el primer mando controla la selección de mapa.
             elif event.type == pygame.JOYAXISMOTION:
                 if event.axis == 1:  # eje vertical
-                    if axis_ready and abs(event.value) > THRESHOLD:
-                        if event.value < 0:
-                            selected_index = (selected_index - 1) % len(mapas)
-                        else:
-                            selected_index = (selected_index + 1) % len(mapas)
-                        config.selected_map = selected_index + 1
-                        axis_ready = False  # bloqueo hasta volver a centro
-                    elif abs(event.value) < DEADZONE:
-                        axis_ready = True  # rearme
+                    tiempo_actual = pygame.time.get_ticks()
+                    axis_last_value = event.value
+                    if abs(event.value) > THRESHOLD:
+                        axis_centered_since = None
+                        if axis_ready and tiempo_actual - last_input_time >= mando_delay:
+                            if event.value < 0:
+                                selected_index = (selected_index - 1) % len(mapas)
+                            else:
+                                selected_index = (selected_index + 1) % len(mapas)
+                            config.selected_map = selected_index + 1
+                            last_input_time = tiempo_actual
+                        axis_ready = False
+                    elif abs(event.value) < DEADZONE and axis_centered_since is None:
+                        axis_centered_since = tiempo_actual
+                    elif abs(event.value) >= DEADZONE:
+                        axis_centered_since = None
 
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
@@ -227,9 +241,13 @@ def pantalla_mapas(screen, bg_anim):
                 elif event.button in (7, 9):  # El botón Options abre los ajustes.
                     from PantallaAudio import pantalla_audio
                     pantalla_audio(display_screen, bg_anim, volver_callback=pantalla_mapas)
-
-
-
+        if not axis_ready and abs(axis_last_value) < DEADZONE:
+            tiempo_actual = pygame.time.get_ticks()
+            if axis_centered_since is None:
+                axis_centered_since = tiempo_actual
+            elif tiempo_actual - axis_centered_since >= AXIS_REARM_DELAY:
+                axis_ready = True
+                axis_centered_since = None
 
         # Dibujar fondo y marco
         bg_anim.update()

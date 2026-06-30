@@ -10,6 +10,7 @@ from PantallaPrincipal import (
     es_evento_joystick_relevante,
     obtener_ultimo_dispositivo_menu,
     iniciar_cursor_menu,
+    mostrar_pantalla_carga,
     presentar_menu_logico,
     registrar_actividad_cursor,
     registrar_dispositivo_menu_evento,
@@ -331,6 +332,7 @@ def pantalla_personajes(screen, bg_anim):
         total_conectados = len(gestor_jugadores.jugadores)
         if len(listos_confirmados) >= 2:
             if len(listos_confirmados) == total_conectados:
+                mostrar_pantalla_carga(display_screen, 300)
                 from KaBoom import iniciar_partida
                 iniciar_partida(display_screen)
                 return True
@@ -482,6 +484,13 @@ def pantalla_personajes(screen, bg_anim):
                 jugador = gestor_jugadores.get_jugador_por_joy(instance_id)
 
                 if jugador is None:
+                    if event.button == 1 and not gestor_jugadores.todos() and not temporizador_listos:
+                        from PantallaMapas import pantalla_mapas
+                        gestor_jugadores.reset()
+                        estado_mandos_desconectados.clear()
+                        recien_unidos.clear()
+                        pantalla_mapas(display_screen, bg_anim)
+                        return
                     union_ok = gestor_jugadores.unir_mando(event.joy)
                     if union_ok:
                         limpiar_listos_huerfanos(gestor_jugadores, temporizador_listos)

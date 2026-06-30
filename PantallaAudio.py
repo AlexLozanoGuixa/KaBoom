@@ -35,6 +35,7 @@ ultimo_index_hover = 0  # Última opción señalada por el cursor.
 tiempo_ultimo_movimiento = 0  # Controla el intervalo entre entradas de mando.
 JOYSTICK_COOLDOWN = 200  # milisegundos
 last_joystick_move_time = 0  # Último movimiento registrado del joystick.
+region_ajustes_sin_retorno = None
 
 def volumen_log(valor_slider):
     return math.pow(valor_slider, 2)  # Aplicar una curva cuadrática para suavizar el volumen y tener una mejor respuesta
@@ -162,9 +163,29 @@ def tipo_joystick_activo(joystick):
     return tipo
 
 
+def crear_solicitante_guia(event=None):
+    if event is not None and event.type in (
+            pygame.JOYBUTTONDOWN, pygame.JOYAXISMOTION, pygame.JOYHATMOTION):
+        registrar_entrada_joystick(event)
+        return {
+            "dispositivo": getattr(event, "instance_id", getattr(event, "joy", None)),
+            "metodo": last_input_method,
+        }
+    return {"dispositivo": "teclado", "metodo": "keyboard"}
+
+
+def obtener_fondo_guia_ajustes(screen):
+    fondo = screen.copy()
+    if region_ajustes_sin_retorno is not None:
+        rect_region, superficie_region = region_ajustes_sin_retorno
+        fondo.blit(superficie_region, rect_region)
+    return fondo
+
+
 def dibujar_ui(screen, bg_anim, fondo_gris, rect_fondo_gris, boton_atras, rect_atras, sliders,
                imagen_boton_b, imagen_escape, imagen_boton_e):
     global hover_casillas, casillas_rects, last_input_method, ultimo_hover_index
+    global region_ajustes_sin_retorno
 
     font_titulo = pygame.font.SysFont(None, 30)
     font_opciones = pygame.font.SysFont(None, 20)
@@ -269,6 +290,16 @@ def dibujar_ui(screen, bg_anim, fondo_gris, rect_fondo_gris, boton_atras, rect_a
     screen.blit(texto_casilla2, texto_casilla2.get_rect(center=casilla2_rect.center))
     screen.blit(texto_rojo, texto_rojo.get_rect(center=casilla_roja_rect.center))
 
+    ancho_ayuda = max(imagen_boton_b.get_width(), imagen_escape.get_width(), imagen_boton_e.get_width())
+    alto_ayuda = max(imagen_boton_b.get_height(), imagen_escape.get_height(), imagen_boton_e.get_height())
+    rect_region = pygame.Rect(
+        rect_atras.left - 4,
+        min(rect_atras.top, rect_atras.centery - alto_ayuda // 2) - 4,
+        rect_atras.width + ancho_ayuda + 22,
+        max(rect_atras.height, alto_ayuda) + 8,
+    ).clip(screen.get_rect())
+    region_ajustes_sin_retorno = (rect_region, screen.subsurface(rect_region).copy())
+
     # --------- BOTÓN ATRÁS ---------
     if rect_atras.collidepoint(mouse_pos):
         screen.blit(pygame.transform.scale(boton_atras, (int(rect_atras.width * 1.1), int(rect_atras.height * 1.1))), rect_atras)
@@ -297,7 +328,7 @@ def manejar_eventos(sliders, rect_atras, screen, bg_anim, volver_callback):
     mouse_click = pygame.mouse.get_pressed()[0]
 
     for event in pygame.event.get():
-        registrar_actividad_cursor(event)
+        actividad_raton = registrar_actividad_cursor(event)
         if event.type == pygame.QUIT:
             pygame.quit()
             sys.exit()
@@ -305,19 +336,20 @@ def manejar_eventos(sliders, rect_atras, screen, bg_anim, volver_callback):
         # --------- DETECCIÓN DE TIPO DE INPUT ------------
         if event.type in [pygame.KEYDOWN, pygame.KEYUP]:
             last_input_method = "keyboard"
-        elif event.type in [pygame.MOUSEBUTTONDOWN, pygame.MOUSEMOTION]:
+        elif event.type in [pygame.MOUSEBUTTONDOWN, pygame.MOUSEMOTION] and actividad_raton:
             last_input_method = "mouse"
         elif event.type in [pygame.JOYBUTTONDOWN, pygame.JOYAXISMOTION, pygame.JOYHATMOTION]:
             registrar_entrada_joystick(event)
 
-        if event.type == pygame.MOUSEMOTION:
+        if event.type == pygame.MOUSEMOTION and actividad_raton:
             cambiar_a_raton()
 
         # Verificar si ha hecho clic en alguna casilla
-        for i, rect in enumerate(casillas_rects):
-            if rect.collidepoint(mouse_pos):
-                selected_element_index = i
-                break
+        if actividad_raton:
+            for i, rect in enumerate(casillas_rects):
+                if rect.collidepoint(mouse_pos):
+                    selected_element_index = i
+                    break
 
         if event.type == pygame.MOUSEBUTTONDOWN:
             last_input_method = "mouse"
@@ -341,7 +373,11 @@ def manejar_eventos(sliders, rect_atras, screen, bg_anim, volver_callback):
                     elif i == 2:
                         from GuiaJuego import pantalla_guia
                         guardar_volumenes(sliders)
-                        pantalla_guia(screen)
+                        pantalla_guia(
+                            screen,
+                            crear_solicitante_guia(),
+                            obtener_fondo_guia_ajustes(screen),
+                        )
                     elif i == 3:
                         guardar_volumenes(sliders)
                         confirmar_salida(screen, bg_anim, fondo_anterior=screen.copy())
@@ -376,7 +412,11 @@ def manejar_eventos(sliders, rect_atras, screen, bg_anim, volver_callback):
                     # Acción: ir a guía del juego
                     from GuiaJuego import pantalla_guia
                     guardar_volumenes(sliders)
-                    pantalla_guia(screen)
+                    pantalla_guia(
+                        screen,
+                        crear_solicitante_guia(),
+                        obtener_fondo_guia_ajustes(screen),
+                    )
                 elif selected_element_index == 3:
                     # Acción: cerrar el juego
                     guardar_volumenes(sliders)
@@ -398,7 +438,11 @@ def manejar_eventos(sliders, rect_atras, screen, bg_anim, volver_callback):
                         )
                     elif selected_element_index == 2:
                         from GuiaJuego import pantalla_guia
-                        pantalla_guia(screen)
+                        pantalla_guia(
+                            screen,
+                            crear_solicitante_guia(),
+                            obtener_fondo_guia_ajustes(screen),
+                        )
                     elif selected_element_index == 3:
                         confirmar_salida(screen, bg_anim, fondo_anterior=screen.copy())
 
@@ -424,7 +468,11 @@ def manejar_eventos(sliders, rect_atras, screen, bg_anim, volver_callback):
                 elif selected_element_index == 2:
                     guardar_volumenes(sliders)
                     from GuiaJuego import pantalla_guia
-                    pantalla_guia(screen)
+                    pantalla_guia(
+                        screen,
+                        crear_solicitante_guia(event),
+                        obtener_fondo_guia_ajustes(screen),
+                    )
                 elif selected_element_index == 3:
                     guardar_volumenes(sliders)
                     confirmar_salida(screen, bg_anim, fondo_anterior=screen.copy())

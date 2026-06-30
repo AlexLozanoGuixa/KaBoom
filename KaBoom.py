@@ -9,7 +9,13 @@ from Config import config, audio
 from ConfiguraciónMandos import gestor_jugadores
 from PausaPartida import menu_pausa
 from itertools import combinations
-from PantallaPrincipal import crear_pantalla_completa, evento_ventana_inactiva, ocultar_cursor_partida
+from PantallaPrincipal import (
+    crear_pantalla_completa,
+    es_evento_control_arcade,
+    es_nombre_control_arcade,
+    evento_ventana_inactiva,
+    ocultar_cursor_partida,
+)
 
 
 # ------------------------------------------------------------------------------------
@@ -28,6 +34,45 @@ def get_joystick_by_instance_id(instance_id: int):
         if joy.get_instance_id() == instance_id:
             return joy
     return None  # si se ha desconectado
+
+
+def obtener_jugador_pausa_por_dispositivo(jugadores, dispositivo):
+    """Localiza al jugador humano que tiene vinculado el dispositivo indicado."""
+    for jugador in jugadores:
+        controles = jugador.controls
+        if controles.get("cpu"):
+            continue
+        if dispositivo == "teclado" and "instance_id" not in controles:
+            return jugador
+        if controles.get("instance_id") == dispositivo:
+            return jugador
+    return None
+
+
+def crear_solicitante_pausa(jugador, dispositivo, metodo, automatica=False):
+    return {
+        "dispositivo": dispositivo,
+        "jugador": jugador.player_index + 1,
+        "metodo": metodo,
+        "automatica": automatica,
+    }
+
+
+def crear_solicitante_pausa_automatica(jugadores):
+    """Asigna la pausa por pérdida de foco al primer jugador humano."""
+    jugador = next((p for p in jugadores if not p.controls.get("cpu")), None)
+    if jugador is None:
+        return None
+
+    dispositivo = jugador.controls.get("instance_id", "teclado")
+    metodo = "keyboard"
+    if dispositivo != "teclado":
+        joystick = get_joystick_by_instance_id(dispositivo)
+        if joystick is not None and es_nombre_control_arcade(joystick.get_name()):
+            metodo = "arcade"
+        else:
+            metodo = "gamepad"
+    return crear_solicitante_pausa(jugador, dispositivo, metodo, automatica=True)
 
 
 BASE_DIR = os.path.dirname(__file__)
@@ -3045,25 +3090,33 @@ def iniciar_partida(screen):
                 if event.type == pygame.QUIT: pygame.quit(); sys.exit()
                 if event.type in (pygame.MOUSEMOTION, pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEWHEEL):
                     ocultar_cursor_partida()
-                should_pause = False
-                pause_instance_id = "teclado"
+                solicitante_pausa = None
                 if estado_set == "jugando":
                     if evento_ventana_inactiva(event):
-                        should_pause = True
-                    elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                        should_pause = True
-                        pause_instance_id = "teclado"
+                        solicitante_pausa = crear_solicitante_pausa_automatica(players)
+                    elif event.type == pygame.KEYDOWN and event.key in (
+                            pygame.K_ESCAPE, pygame.K_LCTRL, pygame.K_RCTRL):
+                        jugador = obtener_jugador_pausa_por_dispositivo(players, "teclado")
+                        if jugador is not None:
+                            solicitante_pausa = crear_solicitante_pausa(
+                                jugador, "teclado", "keyboard"
+                            )
                     elif event.type == pygame.JOYBUTTONDOWN and event.button in (7, 9):
-                        should_pause = True
-                        pause_instance_id = event.instance_id
-                if should_pause:
+                        instance_id = getattr(event, "instance_id", getattr(event, "joy", None))
+                        jugador = obtener_jugador_pausa_por_dispositivo(players, instance_id)
+                        if jugador is not None:
+                            metodo = "arcade" if es_evento_control_arcade(event) else "gamepad"
+                            solicitante_pausa = crear_solicitante_pausa(
+                                jugador, instance_id, metodo
+                            )
+                if solicitante_pausa is not None:
                     musica_activa = pygame.mixer.get_init() is not None and pygame.mixer.music.get_busy()
                     if musica_activa:
                         pygame.mixer.music.pause()
                     pygame.mixer.pause()
                     time_before_pause_sec = time.time()
                     ticks_before_pause_ms = pygame.time.get_ticks()
-                    resultado = menu_pausa(screen, pause_instance_id, screen.copy())
+                    resultado = menu_pausa(screen, solicitante_pausa, screen.copy())
                     ocultar_cursor_partida()
                     if musica_activa:
                         pygame.mixer.music.unpause()

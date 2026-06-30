@@ -4,11 +4,9 @@ import sys
 from PantallaPrincipal import background_screen
 from PantallaPrincipal import BackgroundAnimation
 from PantallaPrincipal import crear_pantalla_completa
-from PantallaConfigPartida import pantalla2_main
-from PantallaMapas import pantalla_mapas
-from PantallaAudio import pantalla_audio
-from PantallaPersonajes import pantalla_personajes
-from AprendeControles import pantalla_controles
+from PantallaPrincipal import mostrar_pantalla_carga
+
+
 def main():
     pygame.init()
 
@@ -24,6 +22,14 @@ def main():
     screen = crear_pantalla_completa()
     screen_width, screen_height = screen.get_size()
     pygame.display.set_caption("KaBoom")
+    mostrar_pantalla_carga(screen, 350)
+
+    # Las pantallas se importan después de mostrar la carga para evitar un inicio negro.
+    from AprendeControles import pantalla_controles
+    from PantallaAudio import pantalla_audio
+    from PantallaConfigPartida import pantalla2_main
+    from PantallaMapas import pantalla_mapas
+    from PantallaPersonajes import pantalla_personajes
 
     # Fondo animado compartido entre pantallas de menú.
     bg_anim = BackgroundAnimation(screen_width, screen_height)
@@ -41,6 +47,7 @@ def main():
         return
     if not pantalla_personajes(screen, bg_anim):
         return
+    mostrar_pantalla_carga(screen, 300)
     from KaBoom import iniciar_partida
     iniciar_partida(screen)
 

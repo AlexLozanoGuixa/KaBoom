@@ -1,6 +1,8 @@
 import pygame
 import sys
 import math
+import re
+import unicodedata
 
 MENU_LOGICAL_SIZE = (800, 600)
 CURSOR_MENU_INACTIVITY_MS = 1800
@@ -21,7 +23,9 @@ _NOMBRES_CONTROL_ARCADE = {
     "controlador jugador 2",
 }
 _ultima_actividad_cursor = 0
+_ultima_posicion_raton = None
 _ultimo_dispositivo_menu = "teclado"
+_tipos_joystick_por_instancia = {}
 
 
 # --- Clase para el fondo animado ---
@@ -114,10 +118,52 @@ def presentar_menu_logico(display_screen, logical_surface):
         display_screen.blit(frame, (0, 0))
 
 
+def dibujar_pantalla_carga(screen, angulo):
+    """Dibuja el estado de carga sobre un fondo negro."""
+    ancho, alto = screen.get_size()
+    escala = min(ancho / 800, alto / 600)
+    margen = max(24, round(28 * escala))
+    radio = max(12, round(14 * escala))
+    grosor = max(3, round(3 * escala))
+    font = pygame.font.SysFont(None, max(24, round(25 * escala)), bold=True)
+
+    screen.fill((0, 0, 0))
+    texto = font.render("Cargando", True, (255, 255, 255))
+    rect_texto = texto.get_rect(bottomright=(ancho - margen, alto - margen))
+    screen.blit(texto, rect_texto)
+
+    centro_x = rect_texto.left - margen // 2 - radio
+    centro_y = rect_texto.centery
+    rect_rueda = pygame.Rect(centro_x - radio, centro_y - radio, radio * 2, radio * 2)
+    pygame.draw.circle(screen, (70, 70, 70), (centro_x, centro_y), radio, grosor)
+    pygame.draw.arc(
+        screen,
+        (255, 255, 255),
+        rect_rueda,
+        angulo,
+        angulo + math.radians(245),
+        grosor,
+    )
+
+
+def mostrar_pantalla_carga(screen, duracion_ms=350):
+    """Presenta brevemente un indicador animado y lo mantiene durante la carga posterior."""
+    inicio = pygame.time.get_ticks()
+    clock = pygame.time.Clock()
+    while pygame.time.get_ticks() - inicio < duracion_ms:
+        pygame.event.pump()
+        transcurrido = pygame.time.get_ticks() - inicio
+        dibujar_pantalla_carga(screen, math.radians((transcurrido * 0.42) % 360))
+        pygame.display.flip()
+        clock.tick(60)
+
+
 def iniciar_cursor_menu():
     """Prepara los menus para empezar con el cursor oculto hasta que se use el raton."""
-    global _ultima_actividad_cursor
+    global _ultima_actividad_cursor, _ultima_posicion_raton
     _ultima_actividad_cursor = 0
+    pygame.event.clear(pygame.MOUSEMOTION)
+    _ultima_posicion_raton = pygame.mouse.get_pos()
     pygame.mouse.set_visible(False)
 
 
@@ -125,27 +171,77 @@ def cursor_menu_activo():
     return pygame.mouse.get_visible()
 
 
-def obtener_nombre_joystick_evento(event):
+def normalizar_nombre_dispositivo(nombre):
+    """Normaliza el nombre que SDL entrega para comparar dispositivos de forma estable."""
+    texto = unicodedata.normalize("NFKD", str(nombre or ""))
+    texto = "".join(caracter for caracter in texto if not unicodedata.combining(caracter))
+    return re.sub(r"[^a-z0-9]+", " ", texto.casefold()).strip()
+
+
+def es_nombre_control_arcade(nombre):
+    nombre_normalizado = normalizar_nombre_dispositivo(nombre)
+    return any(
+        re.search(rf"(?:^|\s){re.escape(nombre_arcade)}(?:\s|$)", nombre_normalizado)
+        for nombre_arcade in _NOMBRES_CONTROL_ARCADE
+    )
+
+
+def registrar_joystick_menu(joystick):
+    """Asocia el identificador estable de SDL con el tipo real de control."""
+    if not joystick.get_init():
+        joystick.init()
+    tipo = "arcade" if es_nombre_control_arcade(joystick.get_name()) else "mando"
+    _tipos_joystick_por_instancia[joystick.get_instance_id()] = tipo
+    return tipo
+
+
+def actualizar_joysticks_menu():
+    """Actualiza el registro sin asumir que el indice SDL coincide con el instance_id."""
+    instancias_conectadas = set()
+    for indice in range(pygame.joystick.get_count()):
+        try:
+            joystick = pygame.joystick.Joystick(indice)
+            registrar_joystick_menu(joystick)
+            instancias_conectadas.add(joystick.get_instance_id())
+        except pygame.error:
+            continue
+
+    for instance_id in list(_tipos_joystick_por_instancia):
+        if instance_id not in instancias_conectadas:
+            del _tipos_joystick_por_instancia[instance_id]
+
+
+def obtener_tipo_joystick_evento(event):
+    actualizar_joysticks_menu()
     instance_id = getattr(event, "instance_id", None)
+    if instance_id in _tipos_joystick_por_instancia:
+        return _tipos_joystick_por_instancia[instance_id]
+
+    # En eventos antiguos, ``joy`` puede contener el instance_id o el indice SDL.
+    joy_id = getattr(event, "joy", None)
+    if joy_id in _tipos_joystick_por_instancia:
+        return _tipos_joystick_por_instancia[joy_id]
+    if isinstance(joy_id, int) and 0 <= joy_id < pygame.joystick.get_count():
+        try:
+            return registrar_joystick_menu(pygame.joystick.Joystick(joy_id))
+        except pygame.error:
+            pass
+
+    return "mando"
+
+
+def obtener_nombre_joystick_evento(event):
+    """Devuelve el nombre del joystick que genero un evento, si sigue conectado."""
+    instance_id = getattr(event, "instance_id", getattr(event, "joy", None))
     for indice in range(pygame.joystick.get_count()):
         try:
             joystick = pygame.joystick.Joystick(indice)
             if not joystick.get_init():
                 joystick.init()
-            if instance_id is not None and joystick.get_instance_id() == instance_id:
+            if joystick.get_instance_id() == instance_id:
                 return joystick.get_name()
         except pygame.error:
             continue
-
-    joy_index = getattr(event, "joy", None)
-    if joy_index is not None:
-        try:
-            joystick = pygame.joystick.Joystick(joy_index)
-            if not joystick.get_init():
-                joystick.init()
-            return joystick.get_name()
-        except pygame.error:
-            return ""
     return ""
 
 
@@ -157,14 +253,10 @@ def es_evento_joystick_relevante(event, umbral=0.35):
     return event.type == pygame.JOYBUTTONDOWN
 
 
-def es_nombre_control_arcade(nombre):
-    return nombre.strip().lower() in _NOMBRES_CONTROL_ARCADE
-
-
 def es_evento_control_arcade(event):
     if event.type not in _JOYSTICK_INPUT_EVENTS or not es_evento_joystick_relevante(event):
         return False
-    return es_nombre_control_arcade(obtener_nombre_joystick_evento(event))
+    return obtener_tipo_joystick_evento(event) == "arcade"
 
 
 def establecer_ultimo_dispositivo_menu(tipo_dispositivo):
@@ -178,11 +270,13 @@ def obtener_ultimo_dispositivo_menu():
 
 
 def tipo_joystick_menu(joystick):
-    return "arcade" if es_nombre_control_arcade(joystick.get_name()) else "mando"
+    return registrar_joystick_menu(joystick)
 
 
 def registrar_dispositivo_menu_evento(event):
-    if event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN, pygame.MOUSEMOTION):
+    if event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN):
+        establecer_ultimo_dispositivo_menu("teclado")
+    elif event.type == pygame.MOUSEMOTION and pygame.mouse.get_visible():
         establecer_ultimo_dispositivo_menu("teclado")
     elif event.type in _JOYSTICK_INPUT_EVENTS and es_evento_joystick_relevante(event):
         establecer_ultimo_dispositivo_menu("arcade" if es_evento_control_arcade(event) else "mando")
@@ -219,18 +313,34 @@ def congelar_menu_si_pierde_foco(event):
             return True
 
 
+def es_actividad_real_raton(event):
+    """Descarta eventos de movimiento generados al abrir o redimensionar la ventana."""
+    global _ultima_posicion_raton
+    if event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEWHEEL):
+        return True
+    if event.type != pygame.MOUSEMOTION:
+        return False
+
+    posicion = getattr(event, "pos", pygame.mouse.get_pos())
+    posicion_anterior = _ultima_posicion_raton
+    _ultima_posicion_raton = posicion
+    return posicion_anterior is not None and posicion != posicion_anterior
+
+
 def registrar_actividad_cursor(event):
     """Muestra el cursor solo cuando hay entrada real de raton."""
     global _ultima_actividad_cursor
     if congelar_menu_si_pierde_foco(event):
         _ultima_actividad_cursor = 0
-        return
-    if event.type in _CURSOR_MOUSE_EVENTS:
+        return False
+    if event.type in _CURSOR_MOUSE_EVENTS and es_actividad_real_raton(event):
         _ultima_actividad_cursor = pygame.time.get_ticks()
         pygame.mouse.set_visible(True)
+        return True
     elif event.type in _CURSOR_NON_MOUSE_EVENTS:
         _ultima_actividad_cursor = 0
         pygame.mouse.set_visible(False)
+    return False
 
 
 def actualizar_cursor_menu():
@@ -298,7 +408,6 @@ def background_screen(screen):
     mandos = [pygame.joystick.Joystick(i) for i in range(pygame.joystick.get_count())]
     for mando in mandos:
         mando.init()
-
     font = pygame.font.SysFont(None, 30)
     message = "PULSA CUALQUIER TECLA O BOTÓN PARA CONTINUAR"
     text_center = (screen_width // 2, screen_height - 100)
