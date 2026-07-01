@@ -5,6 +5,7 @@ import pygame
 
 from PantallaPrincipal import (
     actualizar_cursor_menu,
+    escalar_imagen_por_alto,
     iniciar_cursor_menu,
     registrar_actividad_cursor,
 )
@@ -92,7 +93,10 @@ def cargar_boton_retorno(screen, metodo):
         lado_ayuda = max(40, round(40 * escala))
 
     ayuda = pygame.image.load(ruta_ayuda).convert_alpha()
-    ayuda = pygame.transform.smoothscale(ayuda, (lado_ayuda, lado_ayuda))
+    if metodo == "arcade":
+        ayuda = escalar_imagen_por_alto(ayuda, lado_ayuda)
+    else:
+        ayuda = pygame.transform.smoothscale(ayuda, (lado_ayuda, lado_ayuda))
     margen = max(24, round(25 * escala))
     rect_flecha = flecha.get_rect(bottomleft=(margen, screen.get_height() - margen))
     rect_ayuda = ayuda.get_rect(midleft=(rect_flecha.right + max(8, round(8 * escala)), rect_flecha.centery))

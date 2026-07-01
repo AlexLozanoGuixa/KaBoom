@@ -1,8 +1,9 @@
 import pygame
 import sys
 import math
-import re
-import unicodedata
+from IdentidadArcade import (
+    es_joystick_control_arcade,
+)
 
 MENU_LOGICAL_SIZE = (800, 600)
 CURSOR_MENU_INACTIVITY_MS = 1800
@@ -18,10 +19,6 @@ _CURSOR_NON_MOUSE_EVENTS = (
 _WINDOW_INACTIVE_EVENTS = (pygame.WINDOWFOCUSLOST, pygame.WINDOWMINIMIZED)
 _WINDOW_ACTIVE_EVENTS = (pygame.WINDOWFOCUSGAINED, pygame.WINDOWRESTORED, pygame.WINDOWSHOWN)
 _JOYSTICK_INPUT_EVENTS = (pygame.JOYBUTTONDOWN, pygame.JOYAXISMOTION, pygame.JOYHATMOTION)
-_NOMBRES_CONTROL_ARCADE = {
-    "controlador jugador 1",
-    "controlador jugador 2",
-}
 _ultima_actividad_cursor = 0
 _ultima_posicion_raton = None
 _ultimo_dispositivo_menu = "teclado"
@@ -100,6 +97,16 @@ def crear_superficie_menu_logica():
     return pygame.Surface(MENU_LOGICAL_SIZE, pygame.SRCALPHA)
 
 
+def escalar_imagen_por_alto(imagen, alto):
+    """Redimensiona una imagen conservando su proporción original."""
+    alto = max(1, round(alto))
+    ancho_original, alto_original = imagen.get_size()
+    if alto_original <= 0:
+        return imagen.copy()
+    ancho = max(1, round(ancho_original * alto / alto_original))
+    return pygame.transform.smoothscale(imagen, (ancho, alto))
+
+
 def convertir_mouse_a_logico(mouse_pos, display_screen):
     logical_w, logical_h = MENU_LOGICAL_SIZE
     display_w, display_h = display_screen.get_size()
@@ -171,26 +178,11 @@ def cursor_menu_activo():
     return pygame.mouse.get_visible()
 
 
-def normalizar_nombre_dispositivo(nombre):
-    """Normaliza el nombre que SDL entrega para comparar dispositivos de forma estable."""
-    texto = unicodedata.normalize("NFKD", str(nombre or ""))
-    texto = "".join(caracter for caracter in texto if not unicodedata.combining(caracter))
-    return re.sub(r"[^a-z0-9]+", " ", texto.casefold()).strip()
-
-
-def es_nombre_control_arcade(nombre):
-    nombre_normalizado = normalizar_nombre_dispositivo(nombre)
-    return any(
-        re.search(rf"(?:^|\s){re.escape(nombre_arcade)}(?:\s|$)", nombre_normalizado)
-        for nombre_arcade in _NOMBRES_CONTROL_ARCADE
-    )
-
-
 def registrar_joystick_menu(joystick):
     """Asocia el identificador estable de SDL con el tipo real de control."""
     if not joystick.get_init():
         joystick.init()
-    tipo = "arcade" if es_nombre_control_arcade(joystick.get_name()) else "mando"
+    tipo = "arcade" if es_joystick_control_arcade(joystick) else "mando"
     _tipos_joystick_por_instancia[joystick.get_instance_id()] = tipo
     return tipo
 
@@ -440,17 +432,6 @@ def background_screen(screen):
                 registrar_dispositivo_menu_evento(event)
                 key_sound.play()
                 running = False
-
-            if event.type == pygame.JOYBUTTONDOWN:
-                if event.button == 1:
-                    print("JUEGO CERRADO")
-                    pygame.quit()
-                    sys.exit()
-
-            if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                print("JUEGO CERRADO")
-                pygame.quit()
-                sys.exit()
 
             if event.type == pygame.JOYDEVICEADDED:
                 nuevo_mando = pygame.joystick.Joystick(event.device_index)

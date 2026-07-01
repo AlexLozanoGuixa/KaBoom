@@ -8,9 +8,10 @@ from PantallaPrincipal import (
     convertir_mouse_a_logico,
     crear_superficie_menu_logica,
     cursor_menu_activo,
+    escalar_imagen_por_alto,
     es_evento_control_arcade,
     es_evento_joystick_relevante,
-    es_nombre_control_arcade,
+    es_joystick_control_arcade,
     establecer_ultimo_dispositivo_menu,
     iniciar_cursor_menu,
     obtener_ultimo_dispositivo_menu,
@@ -71,8 +72,8 @@ class ConfiguracionPartida:
         imagen_tecla_escape = pygame.transform.scale(imagen_tecla_escape, (40, 40))
         imagen_tecla_control = pygame.transform.scale(imagen_tecla_control, (50, 40))
         imagen_tecla_enter = pygame.transform.scale(imagen_tecla_enter, (50, 40))
-        imagen_boton_e = pygame.transform.scale(imagen_boton_e, (50, 50))
-        imagen_boton_d = pygame.transform.scale(imagen_boton_d, (50, 50))
+        imagen_boton_e = escalar_imagen_por_alto(imagen_boton_e, 50)
+        imagen_boton_d = escalar_imagen_por_alto(imagen_boton_d, 50)
         imagen_boton_pause = pygame.transform.scale(imagen_boton_pause, (40, 40))
 
         # Tiras
@@ -188,7 +189,7 @@ class ConfiguracionPartida:
 
                     eje_y = joystick.get_axis(1)
                     eje_x = joystick.get_axis(0)
-                    tipo_joystick = "arcade" if es_nombre_control_arcade(joystick.get_name()) else "mando"
+                    tipo_joystick = "arcade" if es_joystick_control_arcade(joystick) else "mando"
 
                     if eje_y < -0.5:  # Joystick arriba
                         last_input_type = tipo_joystick

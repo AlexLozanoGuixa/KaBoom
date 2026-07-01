@@ -7,6 +7,7 @@ from PantallaPrincipal import (
     actualizar_cursor_menu,
     convertir_mouse_a_logico,
     crear_superficie_menu_logica,
+    escalar_imagen_por_alto,
     es_evento_control_arcade,
     es_evento_joystick_relevante,
     obtener_ultimo_dispositivo_menu,
@@ -72,8 +73,8 @@ def pantalla_mapas(screen, bg_anim):
     imagen_tecla_escape = pygame.transform.scale(imagen_tecla_escape, (40, 40))
     imagen_tecla_control = pygame.transform.scale(imagen_tecla_control, (50, 40))
     imagen_tecla_enter = pygame.transform.scale(imagen_tecla_enter, (50, 40))
-    imagen_boton_e = pygame.transform.scale(imagen_boton_e, (50, 50))
-    imagen_boton_d = pygame.transform.scale(imagen_boton_d, (50, 50))
+    imagen_boton_e = escalar_imagen_por_alto(imagen_boton_e, 50)
+    imagen_boton_d = escalar_imagen_por_alto(imagen_boton_d, 50)
     imagen_boton_pause = pygame.transform.scale(imagen_boton_pause, (40, 40))
 
     # Nombres de los mapas

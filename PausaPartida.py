@@ -5,7 +5,7 @@ from PantallaPrincipal import (
     actualizar_cursor_menu,
     es_evento_control_arcade,
     es_evento_joystick_relevante,
-    es_nombre_control_arcade,
+    es_joystick_control_arcade,
     iniciar_cursor_menu,
     registrar_actividad_cursor,
 )
@@ -161,7 +161,7 @@ def registrar_entrada_joystick(event):
 
 
 def tipo_joystick_activo(joystick):
-    return "arcade" if es_nombre_control_arcade(joystick.get_name()) else "gamepad"
+    return "arcade" if es_joystick_control_arcade(joystick) else "gamepad"
 
 
 def dibujar_ui(screen, fondo_gris, rect_fondo_gris, sliders, solicitante):

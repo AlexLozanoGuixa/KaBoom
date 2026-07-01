@@ -4,9 +4,10 @@ import math
 from Config import audio
 from PantallaPrincipal import (
     actualizar_cursor_menu,
+    escalar_imagen_por_alto,
     es_evento_control_arcade,
     es_evento_joystick_relevante,
-    es_nombre_control_arcade,
+    es_joystick_control_arcade,
     establecer_ultimo_dispositivo_menu,
     iniciar_cursor_menu,
     obtener_ultimo_dispositivo_menu,
@@ -158,7 +159,7 @@ def registrar_entrada_joystick(event):
 
 
 def tipo_joystick_activo(joystick):
-    tipo = "arcade" if es_nombre_control_arcade(joystick.get_name()) else "gamepad"
+    tipo = "arcade" if es_joystick_control_arcade(joystick) else "gamepad"
     establecer_ultimo_dispositivo_menu("arcade" if tipo == "arcade" else "mando")
     return tipo
 
@@ -595,9 +596,9 @@ def pantalla_audio(screen, bg_anim, volver_callback):
         tam_boton_b
     )
     try:
-        imagen_boton_e = pygame.transform.scale(
+        imagen_boton_e = escalar_imagen_por_alto(
             pygame.image.load("Media/Menu/Botones/boton_E.png").convert_alpha(),
-            tam_boton_b
+            tam_boton_b[1],
         )
     except pygame.error:
         imagen_boton_e = imagen_boton_b

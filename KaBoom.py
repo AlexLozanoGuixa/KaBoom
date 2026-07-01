@@ -12,7 +12,7 @@ from itertools import combinations
 from PantallaPrincipal import (
     crear_pantalla_completa,
     es_evento_control_arcade,
-    es_nombre_control_arcade,
+    es_joystick_control_arcade,
     evento_ventana_inactiva,
     ocultar_cursor_partida,
 )
@@ -68,7 +68,7 @@ def crear_solicitante_pausa_automatica(jugadores):
     metodo = "keyboard"
     if dispositivo != "teclado":
         joystick = get_joystick_by_instance_id(dispositivo)
-        if joystick is not None and es_nombre_control_arcade(joystick.get_name()):
+        if joystick is not None and es_joystick_control_arcade(joystick):
             metodo = "arcade"
         else:
             metodo = "gamepad"
